@@ -255,6 +255,40 @@ async def cancel_group(group_name: str, db: Session = Depends(get_db)):
     db.commit()
     return {"message": f"Cancelled group {group_name}"}
 
+class RestartGroupRequest(BaseModel):
+    group_name: str
+
+@router.post("/jobs/smart-resume-group")
+async def smart_resume_group(req: RestartGroupRequest, db: Session = Depends(get_db)):
+    jobs = db.query(TranscodeJob).filter(TranscodeJob.group_name == req.group_name).all()
+    requeued = 0
+    import os
+    for job in jobs:
+        is_missing = False
+        if job.status == "completed":
+            if not job.output_path or not os.path.exists(job.output_path):
+                is_missing = True
+        
+        if job.status in ["error", "cancelled", "failed"] or is_missing:
+            job.status = "queued"
+            job.progress = 0
+            job.completed_at = None
+            requeued += 1
+            
+    db.commit()
+    return {"message": f"Smart resumed {requeued} incomplete transcode files for {req.group_name}"}
+
+@router.post("/jobs/restart-group")
+async def restart_group(req: RestartGroupRequest, db: Session = Depends(get_db)):
+    jobs = db.query(TranscodeJob).filter(TranscodeJob.group_name == req.group_name).all()
+    for job in jobs:
+        job.status = "queued"
+        job.progress = 0
+        job.completed_at = None
+            
+    db.commit()
+    return {"message": f"Restarted entire transcode group for {req.group_name}"}
+
 @router.delete("/jobs/{job_id}")
 async def delete_job(job_id: int, db: Session = Depends(get_db)):
     job = db.query(TranscodeJob).filter(TranscodeJob.id == job_id).first()

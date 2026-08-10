@@ -163,7 +163,18 @@ function App() {
   const [readyMedia, setReadyMedia] = useState<any[]>([]);
   const [logHistory, setLogHistory] = useState<LogHistoryItem[]>([]);
   const [logSearchTerm, setLogSearchTerm] = useState('');
-  const [logCategoryTab, setLogCategoryTab] = useState('all');
+  const [logCategoryTab, setLogCategoryTab] = useState<'all'|'rip'|'transcode'|'failed'>('all');
+
+  const formatTitle = (title: string, group?: string) => {
+    if (!title) return 'Unknown';
+    const lower = title.toLowerCase();
+    if ((lower.includes('extra feature') || lower.includes('bonus')) && group && !title.includes(group)) {
+      const titleNoExt = title.replace(/\.[^/.]+$/, "");
+      return `[${titleNoExt} - ${group}]`;
+    }
+    return title;
+  };
+
   const [transferJobs, setTransferJobs] = useState<TransferJob[]>([]);
   const [selectedLog, setSelectedLog] = useState<any>(null);
   const [stagingMedia, setStagingMedia] = useState<any[]>([]);
@@ -1073,7 +1084,7 @@ function App() {
               
               {activeTranscodes.map(job => {
                 const isProcessing = job.status === 'processing' || job.status === 'running';
-                const filename = job.input_path.split('/').pop() || 'Unknown File';
+                const filename = formatTitle(job.input_path.split('/').pop() || 'Unknown File', job.group_name);
                 return (
                   <div key={`transcode-${job.id}`} className='p-4 bg-gray-900/50 rounded-xl border border-gray-700 flex flex-col space-y-3'>
                     <div className='flex justify-between items-center'>
@@ -1117,7 +1128,7 @@ function App() {
         <h3 className='text-2xl font-bold mb-6'>Media Pipeline Tracker</h3>
         <div className='flex flex-col space-y-8'>
           {(() => {
-            const trackingItems = new Map<string, {name: string, status: string, color: string, order: number, progress?: number, isTv?: boolean}>();
+            const trackingItems = new Map<string, {name: string, status: string, color: string, order: number, progress?: number, isTv?: boolean, hasError?: boolean}>();
             
             // 1. Active Rips (Red)
             drives.filter(d => d.rip_status?.status === 'ripping').forEach(d => {
@@ -1147,12 +1158,16 @@ function App() {
             finalizeMedia.forEach(f => {
                 if(f?.name) {
                     const sLen = f.seasons ? Object.keys(f.seasons).length : 0;
+                    const groupJobs = transcodeJobs.filter(j => j.group_name === f.name);
+                    const hasError = groupJobs.length > 0 && groupJobs.some(j => ['error', 'failed', 'cancelled'].includes((j.status || '').toLowerCase()));
+                    
                     trackingItems.set(f.name, {
                         name: f.name,
-                        status: 'Done Transcoding',
-                        color: 'bg-yellow-900/40 border-yellow-500/50 text-yellow-400',
+                        status: hasError ? 'Transcode Error' : 'Done Transcoding',
+                        color: hasError ? 'bg-red-900/40 border-red-500/50 text-red-400' : 'bg-yellow-900/40 border-yellow-500/50 text-yellow-400',
                         order: 3,
-                        isTv: sLen > 0
+                        isTv: sLen > 0,
+                        hasError: hasError
                     });
                 }
             });
@@ -1252,34 +1267,57 @@ function App() {
                         
                         <div className='w-full mt-2 min-h-[24px] flex items-center justify-center'>
                             {item.order === 3 ? (
-                                <div className='flex space-x-2 w-full'>
-                                    <button 
-                                      onClick={async () => {
-                                          if(!settings?.movies_export_path) return alert("Configure Movies Export Path first.");
-                                          try {
-                                              const res = await fetch(`http://localhost:8000/transcoding/push`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ folder_name: item.name, type: 'movie' }) });
-                                              if(res.ok) fetchTransferJobs();
-                                          } catch(e) {}
-                                      }}
-                                      className='flex-1 text-[10px] bg-yellow-600 hover:bg-yellow-500 text-black font-bold py-1.5 px-1 rounded-lg transition-colors'
-                                    >
-                                      Push Movie
-                                    </button>
-                                    {item.isTv && (
-                                    <button 
-                                      onClick={async () => {
-                                          if(!settings?.tv_shows_export_path) return alert("Configure TV Export Path first.");
-                                          try {
-                                              const res = await fetch(`http://localhost:8000/transcoding/push`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ folder_name: item.name, type: 'tv' }) });
-                                              if(res.ok) fetchTransferJobs();
-                                          } catch(e) {}
-                                      }}
-                                      className='flex-1 text-[10px] bg-purple-600 hover:bg-purple-500 text-white font-bold py-1.5 px-1 rounded-lg transition-colors'
-                                    >
-                                      Push TV
-                                    </button>
-                                    )}
-                                </div>
+                                item.hasError ? (
+                                    <div className="flex gap-2 w-full">
+                                        <button 
+                                            onClick={async () => {
+                                                await fetch(`http://localhost:8000/transcoding/jobs/smart-resume-group`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ group_name: item.name }) });
+                                                fetchTranscodeJobs();
+                                            }}
+                                            className='flex-1 text-[10px] bg-blue-600/30 hover:bg-blue-500/50 text-blue-400 font-bold py-1.5 px-1 rounded-lg transition-colors'
+                                        >
+                                            Smart Resume
+                                        </button>
+                                        <button 
+                                            onClick={async () => {
+                                                await fetch(`http://localhost:8000/transcoding/jobs/restart-group`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ group_name: item.name }) });
+                                                fetchTranscodeJobs();
+                                            }}
+                                            className='flex-1 text-[10px] bg-slate-600/30 hover:bg-slate-500/50 text-slate-400 font-bold py-1.5 px-1 rounded-lg transition-colors'
+                                        >
+                                            Restart All
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className='flex space-x-2 w-full'>
+                                        <button 
+                                          onClick={async () => {
+                                              if(!settings?.movies_export_path) return alert("Configure Movies Export Path first.");
+                                              try {
+                                                  const res = await fetch(`http://localhost:8000/transcoding/push`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ folder_name: item.name, type: 'movie' }) });
+                                                  if(res.ok) fetchTransferJobs();
+                                              } catch(e) {}
+                                          }}
+                                          className='flex-1 text-[10px] bg-yellow-600 hover:bg-yellow-500 text-black font-bold py-1.5 px-1 rounded-lg transition-colors'
+                                        >
+                                          Push Movie
+                                        </button>
+                                        {item.isTv && (
+                                        <button 
+                                          onClick={async () => {
+                                              if(!settings?.tv_shows_export_path) return alert("Configure TV Export Path first.");
+                                              try {
+                                                  const res = await fetch(`http://localhost:8000/transcoding/push`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ folder_name: item.name, type: 'tv' }) });
+                                                  if(res.ok) fetchTransferJobs();
+                                              } catch(e) {}
+                                          }}
+                                          className='flex-1 text-[10px] bg-purple-600 hover:bg-purple-500 text-white font-bold py-1.5 px-1 rounded-lg transition-colors'
+                                        >
+                                          Push TV
+                                        </button>
+                                        )}
+                                    </div>
+                                )
                             ) : item.order === 4 ? (
                                 <div className='w-full mt-1 flex flex-col space-y-1'>
                                     {item.status !== 'Finalized' ? (
@@ -2551,9 +2589,10 @@ function App() {
                 </div>
               ) : (
                 Object.values(transcodeJobs.reduce((acc: any, job: any) => {
-                  const groupName = job.group_name || job.input_path.split('/').pop() || 'Unknown';
+                  const rawGroupName = job.group_name || job.input_path.split('/').pop() || 'Unknown';
+                  const groupName = formatTitle(rawGroupName, job.group_name);
                   if (!acc[groupName]) {
-                    acc[groupName] = { group_name: groupName, jobs: [], total: 0, completed: 0, failed: 0, processing: 0, queued: 0 };
+                    acc[groupName] = { group_name: groupName, raw_group_name: rawGroupName, jobs: [], total: 0, completed: 0, failed: 0, processing: 0, queued: 0 };
                   }
                   acc[groupName].jobs.push(job);
                   acc[groupName].total++;
@@ -2841,7 +2880,20 @@ function App() {
                 >
                   <div className='flex justify-between items-start'>
                     <div className='overflow-hidden pr-2'>
-                      <span className='text-sm font-semibold truncate block'>{log.title || 'Unknown'}</span>
+                      <span className='text-sm font-semibold truncate block'>
+                          {(() => {
+                              // Attempt to extract group name if available from context
+                              let groupNameStr = undefined;
+                              const match = log.message ? log.message.match(/group:([^\]]+)/i) : null;
+                              if (match) groupNameStr = match[1].trim();
+                              // Or if log is tied to a specific path, extract folder
+                              if (!groupNameStr && log.title) {
+                                  const parts = log.title.split('/');
+                                  if (parts.length > 2) groupNameStr = parts[parts.length - 3]; // rips/GroupName/Extras
+                              }
+                              return formatTitle(log.title || 'Unknown', groupNameStr);
+                          })()}
+                      </span>
                       <div className='flex space-x-2 mt-1 items-center'>
                         <span className={`text-[9px] px-2 py-0.5 rounded font-bold ${log.type === 'rip' ? 'bg-blue-900/50 text-blue-400' : 'bg-purple-900/50 text-purple-400'}`}>
                           {(log.type || '').toUpperCase()}
