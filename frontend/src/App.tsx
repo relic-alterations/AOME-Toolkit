@@ -1303,20 +1303,22 @@ function App() {
                                             >
                                                 ✓ Clean Local Files
                                             </button>
-                                            <button 
-                                                onClick={() => restartTransfer(item.name)}
-                                                className='w-full text-[10px] text-gray-500 hover:text-gray-400 font-bold py-0.5 px-1 underline transition-colors mt-0.5'
-                                                title="Forces a complete re-transfer of all files for this title, overwriting any existing files at the destination."
-                                            >
-                                                Restart All
-                                            </button>
-                                            <button 
-                                                onClick={() => smartRestartTransfer(item.name)}
-                                                className='w-full text-[10px] bg-blue-600/30 hover:bg-blue-500/50 text-blue-400 font-bold py-1 px-1 rounded-lg transition-colors mt-1'
-                                                title="Compares local and remote file sizes. Instantly skips completed files and only re-transfers missing or incomplete ones without wasting time."
-                                            >
-                                                ⚡ Smart Resume
-                                            </button>
+                                            <div className="flex gap-2 mt-1">
+                                                <button 
+                                                    onClick={() => smartRestartTransfer(item.name)}
+                                                    className='w-full text-[10px] bg-blue-600/30 hover:bg-blue-500/50 text-blue-400 font-bold py-1 px-1 rounded-lg transition-colors'
+                                                    title="Compares local and remote file sizes. Instantly skips completed files and only re-transfers missing or incomplete ones without wasting time."
+                                                >
+                                                    Smart Resume
+                                                </button>
+                                                <button 
+                                                    onClick={() => restartTransfer(item.name)}
+                                                    className='w-full text-[10px] bg-slate-600/30 hover:bg-slate-500/50 text-slate-400 font-bold py-1 px-1 rounded-lg transition-colors'
+                                                    title="Forces a complete re-transfer of all files for this title, overwriting any existing files at the destination."
+                                                >
+                                                    Restart All
+                                                </button>
+                                            </div>
                                         </>
                                     )}
                                 </div>
@@ -3280,7 +3282,7 @@ function App() {
       <header className='w-full max-w-6xl flex justify-between items-center py-10'>
         <div>
           <h1 className='text-5xl font-black bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 to-blue-600'>AOME</h1>
-          <p className='text-[10px] text-gray-500 tracking-[0.4em] uppercase mt-1'>Optical Media Extractor</p>
+          <p className='text-[10px] text-gray-500 tracking-[0.4em] uppercase mt-1'>Automated Optical Media Extractor</p>
         </div>
         
         <nav className='flex space-x-2 bg-gray-900/50 p-2 rounded-2xl border border-gray-800 backdrop-blur-sm'>
