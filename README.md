@@ -1,6 +1,33 @@
 # AOME (Automated Optical Media Extractor)
 
-AOME is a fully automated toolkit for ripping and transcoding optical media. It provides a FastAPI backend for hardware interfacing and a React (Vite) frontend for monitoring and management.
+AOME is a fully automated toolkit for ripping and trans-coding optical media. It provides a FastAPI backend for hardware interfacing and a React (Vite) front-end for monitoring and management.
+
+It uses MakeMKV for media ripping and Handbrake for trans-coding. Currently DVD's and BlueRays are confirmed working but 4k Blurays are untested as of now as I do not have a 4k usable drive. Currently there is no built in way to extract Music/CD's and this is planned to be release in the future.
+
+Native Support for having about as many optical drives as you can get your hands on, the goal to to be as user friendly as possible. 
+
+This was inspired by the popular project "automatic-ripping-machine" but made to be a bit more straightforward and user friendly. I found there were a few features that were either not implemented or I felt were not quite as nice as it could be. 
+
+Full disclosure, I am hardly a software developer/programmer. 99% of this codebase was written by Gemini 3.1 pro and I am certain this code has plenty of room to improve upon. I am not claiming I have the skill to do this all on my own but I wanted to see just how far I could take a project like this. 
+
+---
+
+## Features
+- Rip multiple Discs at the same time
+- Automatic extras detection and labeling for easier use for Jellyfin/Plex
+- Automatically create a comparison document showing you exactly how your media encoding is effecting the quality of your media
+- Automatic Show management making sorting and ripping entire shows as easy as possible
+- High degree of trans-coding control
+- Allow to automatically trans-code to multiple pre-configered formats if you want to have the same title in multiple quality (this can assist if your media server does not have live trans-coding abilities it can be trans-coded ahead of time)
+- More not listed here and more to come
+
+---
+
+## ToDo's
+
+- Add discord/web-hook support to send notifications throughout the media process
+- Add support for music/CD's
+- Likely more not listed here...
 
 ---
 
