@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  aome:
+    build:
+      context: .
+    ports:
+      - "8000:8000"
+    volumes:
+      # Map the user's local ~/AOME folder to the container's root ~/AOME folder
+      - ${HOME}/AOME:/root/AOME
+      
+      # Persist the SQLite database so you don't lose your MakeMKV Key and settings
+      - ./backend/aome.db:/app/backend/aome.db
+      
+      # UNCOMMENT and configure this to pass your network drives/NAS into the container
+      # so AOME can automatically transfer finished transcodes there:
+      # - /mnt/nas/Media:/mnt/nas/Media
+      
+    devices:
+      # Pass the optical drive through to the container
+      - "/dev/sr0:/dev/sr0"
+      # - "/dev/sr1:/dev/sr1" # Uncomment for multiple drives
+    privileged: true # Often required for full SCSI command access to optical drives
+    restart: unless-stopped

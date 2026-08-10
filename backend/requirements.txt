@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+pydantic
+python-multipart
+sqlalchemy
+alembic
+psutil
+requests
+beautifulsoup4

@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+venv/
+env/
+
+# Node
+node_modules/
+build/
+dist/
+
+# Env & DB
+.env
+backend/*.db
+settings.conf
+
+# Media & Logs (To prevent accidental tracking)
+rips/
+transcodes/
+logs/
+.tmp_folder_drive*/
+
+# Agent
+.antigravitycli/
+
+# AI Tracking Files
+AGENT_SYNC.txt
+PLAN.md
