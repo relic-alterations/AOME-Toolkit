@@ -16,8 +16,7 @@ version: '3.8'
 
 services:
   aome:
-    build:
-      context: .
+    image: ghcr.io/relic-alterations/aome-toolkit:main
     ports:
       - "8000:8000"
     volumes:
@@ -46,7 +45,7 @@ services:
    ```
 2. **Start the application:** 
    ```bash
-   docker compose up --build -d
+   docker compose up -d
    ```
 3. **Access the Web UI:** `http://localhost:8000`
 
@@ -71,7 +70,7 @@ You can run AOME on Windows via Docker Desktop, but **please read the hardware w
    ```
 2. **Start the application:** 
    ```powershell
-   docker compose up --build -d
+   docker compose up -d
    ```
 3. **Access the Web UI:** `http://localhost:8000`
 

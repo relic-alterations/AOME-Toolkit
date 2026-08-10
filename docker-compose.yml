@@ -2,8 +2,7 @@ version: '3.8'
 
 services:
   aome:
-    build:
-      context: .
+    image: ghcr.io/relic-alterations/aome-toolkit:main
     ports:
       - "8000:8000"
     volumes:
