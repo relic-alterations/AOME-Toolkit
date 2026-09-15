@@ -11,7 +11,7 @@ class Transcoder:
         self.handbrake_cli_path = handbrake_cli_path
         self.active_jobs = {} # job_id -> job mapping
 
-    async def transcode(self, input_path, output_path, profile_data=None, log_path=None):
+    async def transcode(self, job_id, input_path, output_path, profile_data=None, log_path=None):
         """
         Transcodes a file using Handbrake with detailed settings.
         
@@ -27,69 +27,122 @@ class Transcoder:
         if profile_data is None:
             profile_data = {"preset": "Fast 1080p30"}
 
-        # Base command
-        cmd = [
-            "nice", "-n", "19",
-            self.handbrake_cli_path,
-            "-i", input_path,
-            "-o", output_path,
-        ]
+        if profile_data.get("media_type") == "audio":
+            # Use ffmpeg for audio
+            # We want lossless FLAC or high-quality MP3
+            cmd = ["nice", "-n", "19", "ffmpeg", "-y", "-i", input_path]
+            
+            input_dir = os.path.dirname(input_path)
+            
+            poster_jpg = os.path.join(input_dir, "poster.jpg")
+            has_poster = os.path.exists(poster_jpg)
+            if has_poster:
+                cmd.extend(["-i", poster_jpg])
+                
+            # Now output options
+            a_enc = profile_data.get("audio_encoder", "flac")
+            cmd.extend(["-c:a", a_enc])
+            
+            if a_enc == "libmp3lame":
+                bitrate = str(profile_data.get("audio_bitrate", "320"))
+                cmd.extend(["-b:a", f"{bitrate}k"])
+                
+            if has_poster:
+                cmd.extend(["-map", "0:a", "-map", "1:v", "-c:v", "copy", "-disposition:v", "attached_pic"])
 
-        # Apply Profile Settings
-        if "preset" in profile_data:
-            cmd.extend(["--preset", profile_data["preset"]])
-        
-        if "container" in profile_data:
-            cmd.extend(["--format", profile_data["container"]])
-            
-        if "video_encoder" in profile_data:
-            cmd.extend(["-e", profile_data["video_encoder"]])
-            
-        if "video_quality" in profile_data:
-            cmd.extend(["-q", str(profile_data["video_quality"])])
-            
-        if profile_data.get("width") or profile_data.get("height"):
-            if profile_data.get("width"):
-                cmd.extend(["-w", str(profile_data["width"])])
-            if profile_data.get("height"):
-                cmd.extend(["-l", str(profile_data["height"])])
+            meta_json = os.path.join(input_dir, "metadata.json")
+            if os.path.exists(meta_json):
+                try:
+                    import json, re
+                    with open(meta_json, "r") as f:
+                        meta = json.load(f)
+                    
+                    if meta.get("artist"):
+                        cmd.extend(["-metadata", f"artist={meta['artist']}"])
+                        cmd.extend(["-metadata", f"album_artist={meta['artist']}"])
+                    if meta.get("title"):
+                        cmd.extend(["-metadata", f"album={meta['title']}"])
+                    if meta.get("year"):
+                        cmd.extend(["-metadata", f"date={meta['year']}"])
+                        
+                    # Try to guess track number and title from filename
+                    # "01 - Track.wav" -> track: 1, title: "Track"
+                    basename = os.path.basename(input_path)
+                    name_no_ext = os.path.splitext(basename)[0]
+                    m = re.match(r"^(\d+)\s*-\s*(.+)$", name_no_ext)
+                    if m:
+                        cmd.extend(["-metadata", f"track={int(m.group(1))}"])
+                        cmd.extend(["-metadata", f"title={m.group(2).strip()}"])
+                    else:
+                        cmd.extend(["-metadata", f"title={name_no_ext}"])
+                except Exception as e:
+                    print(f"Failed to apply audio metadata: {e}")
 
-        if "audio_encoder" in profile_data:
-            cmd.extend(["-E", profile_data["audio_encoder"]])
-        
-        if "audio_bitrate" in profile_data:
-            cmd.extend(["-B", str(profile_data["audio_bitrate"])])
-            
-        if profile_data.get("audio_mixdown"):
-            cmd.extend(["--mixdown", profile_data["audio_mixdown"]])
-            
-        if profile_data.get("encoder_preset"):
-            cmd.extend(["--encoder-preset", profile_data["encoder_preset"]])
-            
-        if profile_data.get("framerate") and profile_data["framerate"] != "auto":
-            cmd.extend(["-r", profile_data["framerate"]])
-            
-        if profile_data.get("vfr_cfr") == "cfr":
-            cmd.extend(["--cfr"])
+            cmd.append(output_path)
         else:
-            cmd.extend(["--vfr"])
+            # Base command for HandBrake
+            cmd = [
+                "nice", "-n", "19",
+                self.handbrake_cli_path,
+                "-i", input_path,
+                "-o", output_path,
+            ]
+
+            # Apply Profile Settings
+            if "preset" in profile_data:
+                cmd.extend(["--preset", profile_data["preset"]])
             
-        if profile_data.get("deinterlace"):
-            cmd.extend(["--decomb"])
+            if "container" in profile_data:
+                cmd.extend(["--format", profile_data["container"]])
+                
+            if "video_encoder" in profile_data:
+                cmd.extend(["-e", profile_data["video_encoder"]])
+                
+            if "video_quality" in profile_data:
+                cmd.extend(["-q", str(profile_data["video_quality"])])
+                
+            if profile_data.get("width") or profile_data.get("height"):
+                if profile_data.get("width"):
+                    cmd.extend(["-w", str(profile_data["width"])])
+                if profile_data.get("height"):
+                    cmd.extend(["-l", str(profile_data["height"])])
 
-        # Subtitle Handling
-        if profile_data.get("subtitle_mode") == "english":
-            cmd.extend(["--subtitle-lang-list", "eng", "--first-subtitle"])
-        elif profile_data.get("subtitle_mode") == "all":
-            cmd.extend(["--all-subtitles"])
-        
-        if profile_data.get("burn_subtitles"):
-            cmd.extend(["--subtitle-burned"])
+            if "audio_encoder" in profile_data:
+                cmd.extend(["-E", profile_data["audio_encoder"]])
+            
+            if "audio_bitrate" in profile_data:
+                cmd.extend(["-B", str(profile_data["audio_bitrate"])])
+                
+            if profile_data.get("audio_mixdown"):
+                cmd.extend(["--mixdown", profile_data["audio_mixdown"]])
+                
+            if profile_data.get("encoder_preset"):
+                cmd.extend(["--encoder-preset", profile_data["encoder_preset"]])
+                
+            if profile_data.get("framerate") and profile_data["framerate"] != "auto":
+                cmd.extend(["-r", profile_data["framerate"]])
+                
+            if profile_data.get("vfr_cfr") == "cfr":
+                cmd.extend(["--cfr"])
+            else:
+                cmd.extend(["--vfr"])
+                
+            if profile_data.get("deinterlace"):
+                cmd.extend(["--decomb"])
 
-        # Advanced params (raw string from profile)
-        if profile_data.get("advanced_params"):
-            # Simple splitting by space for now, assuming user knows what they are doing
-            cmd.extend(profile_data["advanced_params"].split())
+            # Subtitle Handling
+            if profile_data.get("subtitle_mode") == "english":
+                cmd.extend(["--subtitle-lang-list", "eng", "--first-subtitle"])
+            elif profile_data.get("subtitle_mode") == "all":
+                cmd.extend(["--all-subtitles"])
+            
+            if profile_data.get("burn_subtitles"):
+                cmd.extend(["--subtitle-burned"])
+
+            # Advanced params (raw string from profile)
+            if profile_data.get("advanced_params"):
+                # Simple splitting by space for now, assuming user knows what they are doing
+                cmd.extend(profile_data["advanced_params"].split())
 
         try:
             process = await asyncio.create_subprocess_exec(
@@ -98,7 +151,6 @@ class Transcoder:
                 stderr=asyncio.subprocess.STDOUT
             )
             
-            job_id = input_path # or use a unique ID
             self.active_jobs[job_id] = {
                 "process": process,
                 "output_path": output_path,
@@ -212,3 +264,5 @@ class Transcoder:
             except Exception:
                 return False
         return False
+
+transcoder_instance = Transcoder()

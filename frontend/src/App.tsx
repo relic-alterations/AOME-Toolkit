@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react'
+import { QRCodeSVG } from 'qrcode.react'
+import { MobileCaptureView } from './MobileCaptureView'
 
 function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((val: T) => T)) => void] {
   const [storedValue, setStoredValue] = useState<T>(() => {
@@ -30,6 +32,10 @@ interface Drive {
   disc_name: string | null;
   device_path: string;
   has_disc: boolean;
+  is_audio?: boolean;
+  artist?: string;
+  year?: string;
+  all_matches?: any[];
   rip_status?: {
     status: string;
     progress: number;
@@ -42,10 +48,12 @@ interface Drive {
 interface Settings {
   tmdb_api_key: string;
   omdb_api_key: string;
+  music_api_key: string;
   makemkv_key: string;
   default_rips_path: string;
   default_transcodes_path: string;
   handbrake_preset: string;
+  default_audio_profile?: string;
   default_rip_mode: string;
   default_subtitle_mode: string;
   max_concurrent_transcodes: number;
@@ -55,6 +63,7 @@ interface Settings {
   auto_delete_transcodes_after_push?: boolean;
   verify_checksum_on_push?: boolean;
   auto_transcode_rips?: boolean;
+  auto_transcode_target?: string;
   export_stats_file?: boolean;
   multi_profile_transcode?: boolean;
   auto_transfer_transcodes?: boolean;
@@ -79,6 +88,7 @@ interface TVShowProfile {
 interface TranscodeProfile {
   id?: number;
   name: string;
+  media_type?: string;
   container: string;
   video_encoder: string;
   video_quality: number;
@@ -154,6 +164,13 @@ class ErrorBoundary extends React.Component<any, any> {
 }
 
 function App() {
+  const queryParams = new URLSearchParams(window.location.search);
+  const captureSession = queryParams.get('captureSession');
+  const folderParam = queryParams.get('folder');
+  if (captureSession) {
+    return <MobileCaptureView sessionId={captureSession} folderName={folderParam || undefined} />;
+  }
+
   const [activeTab, setActiveTab] = useState('dashboard');
   const [drives, setDrives] = useState<Drive[]>([]);
   const [warnings, setWarnings] = useState<string[]>([]);
@@ -163,7 +180,21 @@ function App() {
   const [readyMedia, setReadyMedia] = useState<any[]>([]);
   const [logHistory, setLogHistory] = useState<LogHistoryItem[]>([]);
   const [logSearchTerm, setLogSearchTerm] = useState('');
+  const [qrSession, setQrSession] = useState<string | null>(null);
+  const [qrFolderName, setQrFolderName] = useState<string | null>(null);
+  const [serverIp, setServerIp] = useState<string>(window.location.hostname);
   const [logCategoryTab, setLogCategoryTab] = useState<'all'|'rip'|'transcode'|'failed'>('all');
+
+  useEffect(() => {
+    fetch('http://localhost:8000/media/server-ip')
+      .then(r => r.json())
+      .then(data => {
+        if (data.ip && data.ip !== '127.0.0.1') {
+          setServerIp(data.ip);
+        }
+      })
+      .catch(e => console.error("Failed to fetch server IP", e));
+  }, []);
 
   const formatTitle = (title: string, group?: string) => {
     if (!title) return 'Unknown';
@@ -225,9 +256,10 @@ function App() {
     }
   };
 
-  const [globalMediaMode, setGlobalMediaMode] = useLocalStorage<'movie' | 'tv'>('aome_globalMediaMode', 'movie');
+  const [globalMediaMode, setGlobalMediaMode] = useLocalStorage<'movie' | 'tv' | 'album' | 'mixtape'>('aome_globalMediaMode', 'movie');
   const [globalTvShowId, setGlobalTvShowId] = useLocalStorage<number | null>('aome_globalTvShowId', null);
   const [transcodeTargetMode, setTranscodeTargetMode] = useLocalStorage<'main' | 'all'>('aome_transcodeTargetMode', 'main');
+  const [transcodeMediaMode, setTranscodeMediaMode] = useLocalStorage<'video' | 'audio'>('aome_transcodeMediaMode', 'video');
   
   const [confirmDialog, setConfirmDialog] = useState<{isOpen: boolean, message: string, onConfirm: () => void}>({isOpen: false, message: '', onConfirm: () => {}});
 
@@ -245,6 +277,7 @@ function App() {
   
   const [profileEditor, setProfileEditor] = useLocalStorage<TranscodeProfile>('aome_profileEditor', {
     name: 'New Profile',
+    media_type: 'video',
     container: 'av_mkv',
     video_encoder: 'x264',
     video_quality: 22,
@@ -256,6 +289,7 @@ function App() {
   const [settings, setSettings] = useState<Settings>({
     tmdb_api_key: '',
     omdb_api_key: '',
+    music_api_key: '',
     makemkv_key: '',
     default_rips_path: '',
     default_transcodes_path: '',
@@ -300,8 +334,11 @@ function App() {
 
   const [ripForm, setRipForm] = useState({
     title: '',
+    artist: '',
     year: '',
-    mode: 'movie' as 'movie' | 'tv',
+    mbid: '',
+    poster: '',
+    mode: 'movie' as 'movie' | 'tv' | 'album' | 'mixtape',
     ripMode: 'all' as 'all' | 'main' | 'selection' | 'bonus',
     subtitleMode: 'all' as 'all' | 'english',
     selectedTitleIds: [] as number[],
@@ -750,13 +787,18 @@ function App() {
     }
   };
 
-  const saveSettings = async () => {
+  const saveSettings = async (newSettings?: any) => {
+    const isEvent = newSettings && typeof newSettings.preventDefault === 'function';
+    const actualNewSettings = isEvent ? undefined : newSettings;
+    
     setSaveStatus('saving');
+    const dataToSave = actualNewSettings || settings;
+    if (actualNewSettings) setSettings(actualNewSettings);
     try {
       const response = await fetch('http://localhost:8000/settings/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(settings)
+        body: JSON.stringify(dataToSave)
       });
       if (response.ok) {
         setSaveStatus('success');
@@ -866,10 +908,18 @@ function App() {
        }
     }
 
+    let initialMode = globalMediaMode;
+    if (drive.is_audio) {
+      initialMode = 'album';
+    }
+
     setRipForm({
-      title: drive.disc_name || '',
-      year: '',
-      mode: globalMediaMode,
+      title: drive.disc_name && drive.disc_name !== "Audio CD" ? drive.disc_name : '',
+      artist: drive.artist || '',
+      year: drive.year || '',
+      mbid: drive.all_matches && drive.all_matches.length > 0 ? drive.all_matches[0].id : '',
+      poster: drive.all_matches && drive.all_matches.length > 0 ? drive.all_matches[0].poster : '',
+      mode: initialMode,
       ripMode: (settings.default_rip_mode || 'all') as any,
       subtitleMode: (settings.default_subtitle_mode || 'all') as any,
       selectedTitleIds: [],
@@ -943,6 +993,9 @@ function App() {
       else params.append('title', 'Unknown');
       
       if (ripForm.year) params.append('year', ripForm.year.toString());
+      if (ripForm.artist) params.append('artist', ripForm.artist);
+      if (ripForm.mbid) params.append('mbid', ripForm.mbid);
+      if (ripForm.poster) params.append('poster', ripForm.poster);
 
       if (ripForm.mode === 'tv') {
         if (!ripForm.tvShowId) {
@@ -1035,7 +1088,7 @@ function App() {
         <h3 className='text-2xl font-bold mb-6'>Running Jobs</h3>
         
         {(() => {
-          const activeRips = drives.filter(d => ['ripping', 'initializing'].includes(d.rip_status?.status || ''));
+          const activeRips = drives.filter(d => ['ripping', 'Ripping tracks (cdparanoia)...', 'initializing'].includes(d.rip_status?.status || ''));
           const activeTranscodes = transcodeJobs.filter(j => ['queued', 'processing', 'running'].includes(j.status));
           
           if (activeRips.length === 0 && activeTranscodes.length === 0) {
@@ -1085,13 +1138,15 @@ function App() {
               {activeTranscodes.map(job => {
                 const isProcessing = job.status === 'processing' || job.status === 'running';
                 const filename = formatTitle(job.input_path.split('/').pop() || 'Unknown File', job.group_name);
+                const profile = transcodeProfiles.find(p => p.id === job.profile_id);
+                const profileName = profile ? ` (${profile.name})` : '';
                 return (
                   <div key={`transcode-${job.id}`} className='p-4 bg-gray-900/50 rounded-xl border border-gray-700 flex flex-col space-y-3'>
                     <div className='flex justify-between items-center'>
                       <div className='flex items-center space-x-4'>
                         <span className='text-3xl'>🎬</span>
                         <div>
-                          <p className='font-bold text-gray-200'>Transcoding: {filename}</p>
+                          <p className='font-bold text-gray-200'>Transcoding: {filename}{profileName}</p>
                           <p className='text-xs text-gray-400 capitalize'>{job.status}</p>
                         </div>
                       </div>
@@ -1131,7 +1186,7 @@ function App() {
             const trackingItems = new Map<string, {name: string, status: string, color: string, order: number, progress?: number, isTv?: boolean, hasError?: boolean}>();
             
             // 1. Active Rips (Red)
-            drives.filter(d => d.rip_status?.status === 'ripping').forEach(d => {
+            drives.filter(d => ['ripping', 'Ripping tracks (cdparanoia)...'].includes(d.rip_status?.status || '')).forEach(d => {
                 const name = d.disc_name || `Drive ${d.index}`;
                 trackingItems.set(name, {
                     name: name,
@@ -1166,7 +1221,7 @@ function App() {
                         status: hasError ? 'Transcode Error' : 'Done Transcoding',
                         color: hasError ? 'bg-red-900/40 border-red-500/50 text-red-400' : 'bg-yellow-900/40 border-yellow-500/50 text-yellow-400',
                         order: 3,
-                        isTv: sLen > 0,
+                        type: f.type,
                         hasError: hasError
                     });
                 }
@@ -1244,12 +1299,16 @@ function App() {
             }
 
             const renderCard = (item: any, idx: number) => {
-                // Attempt to find poster in ripHistory
+                // Attempt to find poster in ripHistory or active staging/finalize
+                const fromFinalize = finalizeMedia.find(f => f.name === item.name);
+                const fromReady = readyMedia.find(r => r.name === item.name);
+                
                 const historyItem = ripHistory.find(r => {
                     const cleanTitle = r.title.replace(/^\[.*?\]\s*/, '');
                     return item.name === cleanTitle || item.name.startsWith(cleanTitle + ' (');
                 });
-                const posterUrl = historyItem?.poster_url;
+                
+                const posterUrl = fromFinalize?.poster_url || fromReady?.poster_url || historyItem?.poster_url;
 
                 return (
                     <div key={idx} className={`p-4 rounded-2xl border flex flex-col justify-between items-center text-center transition-all hover:scale-105 shadow-xl ${item.color}`}>
@@ -1290,31 +1349,45 @@ function App() {
                                     </div>
                                 ) : (
                                     <div className='flex space-x-2 w-full'>
-                                        <button 
-                                          onClick={async () => {
-                                              if(!settings?.movies_export_path) return alert("Configure Movies Export Path first.");
-                                              try {
-                                                  const res = await fetch(`http://localhost:8000/transcoding/push`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ folder_name: item.name, type: 'movie' }) });
-                                                  if(res.ok) fetchTransferJobs();
-                                              } catch(e) {}
-                                          }}
-                                          className='flex-1 text-[10px] bg-yellow-600 hover:bg-yellow-500 text-black font-bold py-1.5 px-1 rounded-lg transition-colors'
-                                        >
-                                          Push Movie
-                                        </button>
-                                        {item.isTv && (
-                                        <button 
-                                          onClick={async () => {
-                                              if(!settings?.tv_shows_export_path) return alert("Configure TV Export Path first.");
-                                              try {
-                                                  const res = await fetch(`http://localhost:8000/transcoding/push`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ folder_name: item.name, type: 'tv' }) });
-                                                  if(res.ok) fetchTransferJobs();
-                                              } catch(e) {}
-                                          }}
-                                          className='flex-1 text-[10px] bg-purple-600 hover:bg-purple-500 text-white font-bold py-1.5 px-1 rounded-lg transition-colors'
-                                        >
-                                          Push TV
-                                        </button>
+                                        {item.type === 'music' || item.type === 'album' ? (
+                                          <button 
+                                            onClick={async () => {
+                                                if(!settings?.music_export_path) return alert("Configure Music Export Path first.");
+                                                try {
+                                                    const res = await fetch(`http://localhost:8000/transcoding/push`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ folder_name: item.name, type: 'music' }) });
+                                                    if(res.ok) fetchTransferJobs();
+                                                } catch(e) {}
+                                            }}
+                                            className='flex-1 text-[10px] bg-green-600 hover:bg-green-500 text-white font-bold py-1.5 px-1 rounded-lg transition-colors'
+                                          >
+                                            Push Music
+                                          </button>
+                                        ) : item.type === 'tv' ? (
+                                          <button 
+                                            onClick={async () => {
+                                                if(!settings?.tv_shows_export_path) return alert("Configure TV Export Path first.");
+                                                try {
+                                                    const res = await fetch(`http://localhost:8000/transcoding/push`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ folder_name: item.name, type: 'tv' }) });
+                                                    if(res.ok) fetchTransferJobs();
+                                                } catch(e) {}
+                                            }}
+                                            className='flex-1 text-[10px] bg-purple-600 hover:bg-purple-500 text-white font-bold py-1.5 px-1 rounded-lg transition-colors'
+                                          >
+                                            Push TV Show
+                                          </button>
+                                        ) : (
+                                          <button 
+                                            onClick={async () => {
+                                                if(!settings?.movies_export_path) return alert("Configure Movies Export Path first.");
+                                                try {
+                                                    const res = await fetch(`http://localhost:8000/transcoding/push`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ folder_name: item.name, type: 'movie' }) });
+                                                    if(res.ok) fetchTransferJobs();
+                                                } catch(e) {}
+                                            }}
+                                            className='flex-1 text-[10px] bg-yellow-600 hover:bg-yellow-500 text-black font-bold py-1.5 px-1 rounded-lg transition-colors'
+                                          >
+                                            Push Movie
+                                          </button>
                                         )}
                                     </div>
                                 )
@@ -1435,6 +1508,18 @@ function App() {
               >
                 TV Shows
               </button>
+              <button 
+                onClick={() => setGlobalMediaMode('album')}
+                className={`px-8 py-2 rounded-lg font-bold text-sm transition-all ${globalMediaMode === 'album' ? 'bg-green-600 text-white shadow-lg' : 'text-gray-500 hover:text-gray-300'}`}
+              >
+                Albums
+              </button>
+              <button 
+                onClick={() => setGlobalMediaMode('mixtape')}
+                className={`px-8 py-2 rounded-lg font-bold text-sm transition-all ${globalMediaMode === 'mixtape' ? 'bg-orange-600 text-white shadow-lg' : 'text-gray-500 hover:text-gray-300'}`}
+              >
+                Mixtapes
+              </button>
             </div>
           </div>
 
@@ -1463,7 +1548,7 @@ function App() {
           )}
         </div>
         
-        {drives.some(d => d.rip_status?.status === 'ripping' || d.rip_status?.status === 'initializing') && (
+        {drives.some(d => ['ripping', 'Ripping tracks (cdparanoia)...', 'initializing'].includes(d.rip_status?.status || '')) && (
             <button 
               onClick={async () => {
                 if (window.confirm("Are you sure you want to cancel all active ripping processes? This will abruptly terminate MakeMKV on all drives.")) {
@@ -1491,10 +1576,10 @@ function App() {
           </div>
         ) : (
           drives.map(drive => (
-            <div key={drive.index} className={`p-8 bg-gray-800/40 rounded-3xl border border-gray-700 relative overflow-hidden group ${['ripping', 'initializing'].includes(drive.rip_status?.status || '') ? 'ring-2 ring-blue-500' : ''}`}>
+            <div key={drive.index} className={`p-8 bg-gray-800/40 rounded-3xl border border-gray-700 relative overflow-hidden group ${['ripping', 'Ripping tracks (cdparanoia)...', 'initializing'].includes(drive.rip_status?.status || '') ? 'ring-2 ring-blue-500' : ''}`}>
                <div className='flex justify-between items-start mb-6'>
                   <div className='p-4 bg-gray-900 rounded-2xl text-3xl'>
-                    {['ripping', 'initializing'].includes(drive.rip_status?.status || '') ? '⚡' : (drive.has_disc ? '📀' : '📤')}
+                    {['ripping', 'Ripping tracks (cdparanoia)...', 'initializing'].includes(drive.rip_status?.status || '') ? '⚡' : (drive.has_disc ? '📀' : '📤')}
                   </div>
                   <span className='text-xs font-mono text-gray-500'>DEV: {drive.device_path}</span>
                </div>
@@ -1525,12 +1610,12 @@ function App() {
                  </h3>
                )}
                
-               {['ripping', 'initializing'].includes(drive.rip_status?.status || '') ? (
+               {['ripping', 'Ripping tracks (cdparanoia)...', 'initializing', 'completed', 'failed'].includes(drive.rip_status?.status || '') ? (
                  <div className='space-y-4'>
                     <div className='flex justify-between items-end'>
                       <div>
-                        <p className='text-blue-400 font-bold'>
-                          {drive.rip_status?.status === 'initializing' ? 'INITIALIZING EXTRACTION' : 'EXTRACTING DATA'}
+                        <p className={drive.rip_status?.status === 'failed' ? 'text-red-400 font-bold' : drive.rip_status?.status === 'completed' ? 'text-green-400 font-bold' : 'text-blue-400 font-bold'}>
+                          {drive.rip_status?.status === 'initializing' ? 'INITIALIZING EXTRACTION' : drive.rip_status?.status === 'failed' ? 'EXTRACTION FAILED' : drive.rip_status?.status === 'completed' ? 'EXTRACTION COMPLETE' : 'EXTRACTING DATA'}
                         </p>
                         {drive.rip_status!.titles_total > 0 && (
                           <p className='text-[10px] text-gray-400 uppercase'>
@@ -1542,7 +1627,7 @@ function App() {
                     </div>
                     <div className='w-full h-3 bg-gray-900 rounded-full overflow-hidden'>
                       <div 
-                        className={`h-full transition-all duration-1000 ${drive.rip_status?.status === 'initializing' ? 'bg-blue-600 animate-pulse w-full' : 'bg-blue-500'}`} 
+                        className={`h-full transition-all duration-1000 ${drive.rip_status?.status === 'initializing' ? 'bg-blue-600 animate-pulse w-full' : drive.rip_status?.status === 'failed' ? 'bg-red-500' : drive.rip_status?.status === 'completed' ? 'bg-green-500' : 'bg-blue-500'}`} 
                         style={drive.rip_status?.status === 'initializing' ? {} : { width: `${drive.rip_status!.progress}%` }}
                       ></div>
                     </div>
@@ -1568,9 +1653,10 @@ function App() {
                    </div>
                    <button 
                     onClick={() => openRipModal(drive)}
-                    className='w-full py-4 bg-blue-600 rounded-2xl font-bold hover:bg-blue-500 transition-colors shadow-lg shadow-blue-900/20'
+                    disabled={startingRip}
+                    className={`w-full py-4 rounded-2xl font-bold transition-colors shadow-lg ${startingRip ? 'bg-gray-600 opacity-50 cursor-not-allowed text-gray-300' : 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-900/20'}`}
                    >
-                     Initialize Extraction
+                     {startingRip ? 'Initializing...' : 'Initialize Extraction'}
                    </button>
                  </div>
                ) : (
@@ -1592,53 +1678,79 @@ function App() {
               </div>
               
               <div className='space-y-6'>
-                <div className='grid grid-cols-2 gap-4'>
-                  <div>
-                    <label className='block text-xs text-gray-500 uppercase font-bold mb-2'>Subtitles</label>
-                    <div className='flex p-1 bg-gray-900 rounded-xl border border-gray-700'>
-                      <button 
-                        onClick={() => setRipForm({...ripForm, subtitleMode: 'all'})}
-                        className={`flex-1 py-2 rounded-lg font-bold text-xs transition-all ${ripForm.subtitleMode === 'all' ? 'bg-gray-600 text-white shadow-lg' : 'text-gray-500 hover:text-gray-300'}`}
-                      >
-                        All
-                      </button>
-                      <button 
-                        onClick={() => setRipForm({...ripForm, subtitleMode: 'english'})}
-                        className={`flex-1 py-2 rounded-lg font-bold text-xs transition-all ${ripForm.subtitleMode === 'english' ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-500 hover:text-gray-300'}`}
-                      >
-                        English Only
-                      </button>
+                {(ripForm.mode !== 'album' && ripForm.mode !== 'mixtape') && (
+                  <div className='grid grid-cols-2 gap-4'>
+                    <div>
+                      <label className='block text-xs text-gray-500 uppercase font-bold mb-2'>Subtitles</label>
+                      <div className='flex p-1 bg-gray-900 rounded-xl border border-gray-700'>
+                        <button 
+                          onClick={() => setRipForm({...ripForm, subtitleMode: 'all'})}
+                          className={`flex-1 py-2 rounded-lg font-bold text-xs transition-all ${ripForm.subtitleMode === 'all' ? 'bg-gray-600 text-white shadow-lg' : 'text-gray-500 hover:text-gray-300'}`}
+                        >
+                          All
+                        </button>
+                        <button 
+                          onClick={() => setRipForm({...ripForm, subtitleMode: 'english'})}
+                          className={`flex-1 py-2 rounded-lg font-bold text-xs transition-all ${ripForm.subtitleMode === 'english' ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-500 hover:text-gray-300'}`}
+                        >
+                          English Only
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
 
                 <div className='space-y-4'>
-                  {ripForm.mode === 'movie' ? (
+                  {(ripForm.mode === 'movie' || ripForm.mode === 'album' || ripForm.mode === 'mixtape') ? (
                     <div className='relative'>
-                      <label className='block text-xs text-gray-500 uppercase font-bold mb-2'>Movie Title</label>
+                      <label className='flex justify-between items-center text-xs text-gray-500 uppercase font-bold mb-2'>
+                        <span>{ripForm.mode === 'movie' ? 'Movie Title' : ripForm.mode === 'album' ? 'Album Title' : 'Mixtape Name'}</span>
+                        {(ripForm.mode === 'album' && selectedDrive?.all_matches && selectedDrive.all_matches.length > 1) && (
+                          <button 
+                            type="button"
+                            onClick={() => {
+                              setMetadataResults(selectedDrive.all_matches!);
+                              setIsSearchingMetadata(false);
+                              setShowMetadataDropdown(true);
+                            }}
+                            className="text-blue-400 hover:text-blue-300 normal-case bg-blue-900/30 px-2 py-1 rounded"
+                          >
+                            ⚠️ {selectedDrive.all_matches.length} matches found - Click to view
+                          </button>
+                        )}
+                      </label>
                       <input 
                         type='text' 
                         value={ripForm.title}
                         onChange={(e) => {
                           setRipForm({...ripForm, title: e.target.value});
-                          searchMetadata(e.target.value, 'movie');
+                          if (ripForm.mode !== 'mixtape') {
+                            searchMetadata(e.target.value, ripForm.mode as any);
+                          }
                         }}
                         onFocus={() => {
-                          if (ripForm.title.length >= 3) setShowMetadataDropdown(true);
+                          if (ripForm.mode !== 'mixtape' && ripForm.title.length >= 3) setShowMetadataDropdown(true);
                         }}
                         className='w-full bg-gray-900 border border-gray-700 rounded-xl p-4 text-sm focus:border-blue-500 outline-none transition-colors' 
-                        placeholder='e.g. Inception'
+                        placeholder={ripForm.mode === 'movie' ? 'e.g. Inception' : ripForm.mode === 'album' ? 'e.g. Nevermind' : 'e.g. Summer Mix 99'}
                       />
-                      {showMetadataDropdown && ripForm.mode === 'movie' && (
+                      {showMetadataDropdown && (ripForm.mode === 'movie' || ripForm.mode === 'album') && (
                         <div className='absolute z-20 w-full mt-1 bg-gray-800 border border-gray-700 rounded-xl shadow-2xl max-h-64 overflow-y-auto'>
                           {isSearchingMetadata ? (
-                            <div className='p-4 text-center text-gray-500 text-xs font-bold'>Searching OMDB...</div>
+                            <div className='p-4 text-center text-gray-500 text-xs font-bold'>Searching {ripForm.mode === 'movie' ? 'OMDB' : 'MusicBrainz'}...</div>
                           ) : metadataResults.length > 0 ? (
                             metadataResults.map(res => (
                               <div 
                                 key={res.id} 
                                 onClick={() => {
-                                  setRipForm({...ripForm, title: res.title, year: (res.year ? res.year.toString().substring(0,4) : '')});
+                                  setRipForm({
+                                      ...ripForm, 
+                                      title: res.title, 
+                                      artist: res.artist || '', 
+                                      year: (res.year ? res.year.toString().substring(0,4) : ''),
+                                      mbid: res.id,
+                                      poster: res.poster || ''
+                                  });
                                   setShowMetadataDropdown(false);
                                 }}
                                 className='p-3 border-b border-gray-700 hover:bg-gray-700 cursor-pointer flex items-center space-x-3 last:border-0'
@@ -1646,11 +1758,11 @@ function App() {
                                 {res.poster ? (
                                   <img src={res.poster} alt="Poster" className='w-8 h-12 object-cover rounded' />
                                 ) : (
-                                  <div className='w-8 h-12 bg-gray-900 rounded flex items-center justify-center text-xs'>🎬</div>
+                                  <div className='w-8 h-12 bg-gray-900 rounded flex items-center justify-center text-xs'>{ripForm.mode === 'movie' ? '🎬' : '🎵'}</div>
                                 )}
                                 <div>
                                   <p className='font-bold text-sm'>{res.title}</p>
-                                  <p className='text-xs text-gray-400'>{res.year}</p>
+                                  <p className='text-xs text-gray-400'>{res.artist ? `${res.artist} • ` : ''}{res.year}</p>
                                 </div>
                               </div>
                             ))
@@ -1672,16 +1784,30 @@ function App() {
                     </div>
                   )}
                   
-                  {ripForm.mode === 'movie' && (
-                    <div>
-                      <label className='block text-xs text-gray-500 uppercase font-bold mb-2'>Release Year (Optional)</label>
-                      <input 
-                        type='text' 
-                        value={ripForm.year}
-                        onChange={(e) => setRipForm({...ripForm, year: e.target.value})}
-                        className='w-full bg-gray-900 border border-gray-700 rounded-xl p-4 text-sm focus:border-blue-500 outline-none transition-colors' 
-                        placeholder='e.g. 2010'
-                      />
+                  {(ripForm.mode === 'movie' || ripForm.mode === 'album' || ripForm.mode === 'mixtape') && (
+                    <div className='flex space-x-4 mt-2'>
+                        {ripForm.mode !== 'movie' && (
+                          <div className='flex-1'>
+                            <label className='block text-xs text-gray-500 uppercase font-bold mb-2'>Artist (Optional)</label>
+                            <input 
+                              type='text' 
+                              value={ripForm.artist}
+                              onChange={(e) => setRipForm({...ripForm, artist: e.target.value})}
+                              className='w-full bg-gray-900 border border-gray-700 rounded-xl p-4 text-sm focus:border-blue-500 outline-none transition-colors' 
+                              placeholder='e.g. Nirvana'
+                            />
+                          </div>
+                        )}
+                      <div className='flex-1'>
+                        <label className='block text-xs text-gray-500 uppercase font-bold mb-2'>Release Year (Optional)</label>
+                        <input 
+                          type='text' 
+                          value={ripForm.year}
+                          onChange={(e) => setRipForm({...ripForm, year: e.target.value})}
+                          className='w-full bg-gray-900 border border-gray-700 rounded-xl p-4 text-sm focus:border-blue-500 outline-none transition-colors' 
+                          placeholder='e.g. 2010'
+                        />
+                      </div>
                     </div>
                   )}
 
@@ -1702,36 +1828,37 @@ function App() {
                     </div>
                   )}
                 </div>
-
-                <div>
-                  <label className='block text-xs text-gray-500 uppercase font-bold mb-2'>Ripping Strategy</label>
-                  <div className='grid grid-cols-4 gap-2 p-1 bg-gray-900 rounded-xl border border-gray-700'>
-                    {[
-                      { id: 'all', label: 'Rip All' },
-                      { id: 'main', label: 'Main Feature' },
-                      { id: 'bonus', label: 'Bonus Disc' },
-                      { id: 'selection', label: 'Manual Selection' }
-                    ].map(strategy => (
-                      <button 
-                        key={strategy.id}
-                        onClick={() => {
-                          setRipForm({...ripForm, ripMode: strategy.id as any});
-                          if ((strategy.id === 'selection' || strategy.id === 'main') && discTitles.length === 0) {
-                            scanDisc();
-                          }
-                        }}
-                        className={`py-2 rounded-lg font-bold text-xs transition-all ${ripForm.ripMode === strategy.id ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-500 hover:text-gray-300'}`}
-                      >
-                        {strategy.label}
-                      </button>
-                    ))}
+                {(ripForm.mode !== 'album' && ripForm.mode !== 'mixtape') && (
+                  <div>
+                    <label className='block text-xs text-gray-500 uppercase font-bold mb-2'>Ripping Strategy</label>
+                    <div className='grid grid-cols-4 gap-2 p-1 bg-gray-900 rounded-xl border border-gray-700'>
+                      {[
+                        { id: 'all', label: 'Rip All' },
+                        { id: 'main', label: 'Main Feature' },
+                        { id: 'bonus', label: 'Bonus Disc' },
+                        { id: 'selection', label: 'Manual Selection' }
+                      ].map(strategy => (
+                        <button 
+                          key={strategy.id}
+                          onClick={() => {
+                            setRipForm({...ripForm, ripMode: strategy.id as any});
+                            if ((strategy.id === 'selection' || strategy.id === 'main') && discTitles.length === 0) {
+                              scanDisc();
+                            }
+                          }}
+                          className={`py-2 rounded-lg font-bold text-xs transition-all ${ripForm.ripMode === strategy.id ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-500 hover:text-gray-300'}`}
+                        >
+                          {strategy.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             </div>
 
             <div className='flex-grow overflow-y-auto px-8 pb-8'>
-              {(ripForm.ripMode === 'selection' || ripForm.ripMode === 'main') && (
+              {(ripForm.ripMode === 'selection' || ripForm.ripMode === 'main') && ripForm.mode !== 'album' && ripForm.mode !== 'mixtape' && (
                 <div className='space-y-4'>
                   <div className='flex justify-between items-center sticky top-0 bg-gray-800 py-2 z-10'>
                     <label className='block text-xs text-gray-500 uppercase font-bold'>
@@ -2023,6 +2150,61 @@ function App() {
     );
   };
 
+  const startQrSession = async (folderName: string) => {
+    try {
+      const r = await fetch(`http://localhost:8000/media/server-ip?t=${Date.now()}`, { cache: 'no-store' });
+      const data = await r.json();
+      if (data.ip && data.ip !== '127.0.0.1') {
+        setServerIp(data.ip);
+      }
+    } catch (e) {
+      console.error("Failed to fetch server IP", e);
+    }
+    const sess = Math.random().toString(36).substring(2, 8).toUpperCase();
+    setQrSession(sess);
+    setQrFolderName(folderName);
+  };
+
+  useEffect(() => {
+    if (!qrSession) return;
+    const host = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? serverIp : window.location.hostname;
+    const ws = new WebSocket(`ws://${host}:8000/media/ws/capture/${qrSession}`);
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.status === 'success') {
+        fetchStagingMedia();
+        fetchReadyMedia();
+        fetchFinalizeMedia();
+        fetchRipHistory();
+        if (stagingModalFolder && qrFolderName === stagingModalFolder.name) {
+          setStagingModalFolder({ ...stagingModalFolder, poster_url: data.image_url + "?t=" + Date.now() });
+        }
+        setQrSession(null);
+        setQrFolderName(null);
+      }
+    };
+    return () => ws.close();
+  }, [qrSession, qrFolderName, stagingModalFolder, serverIp]);
+
+  const renderQrModal = () => {
+    if (!qrSession) return null;
+    const host = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? serverIp : window.location.hostname;
+    const captureUrl = `http://${host}:5173/?captureSession=${qrSession}&folder=${encodeURIComponent(qrFolderName || '')}`;
+    return (
+      <div className='fixed inset-0 bg-black/80 backdrop-blur-sm z-[60] flex items-center justify-center p-4'>
+        <div className='bg-gray-900 border border-gray-700 rounded-3xl p-10 flex flex-col items-center shadow-2xl'>
+          <h2 className='text-3xl font-bold mb-2'>Capture Cover Art</h2>
+          <p className='text-gray-400 mb-2 max-w-sm text-center'>Scan this QR code with your phone camera.</p>
+          <p className='text-xs font-mono text-gray-500 mb-6 bg-black/50 p-2 rounded'>{captureUrl}</p>
+          <div className='bg-white p-4 rounded-2xl mb-8'>
+            <QRCodeSVG value={captureUrl} size={256} />
+          </div>
+          <button onClick={() => setQrSession(null)} className='px-6 py-3 bg-gray-800 hover:bg-gray-700 rounded-xl font-bold transition-colors'>Cancel</button>
+        </div>
+      </div>
+    );
+  };
+
   const renderStagingModal = () => {
     if (!stagingModalFolder) return null;
     
@@ -2034,8 +2216,18 @@ function App() {
           <div className='flex-1 p-8 border-b md:border-b-0 md:border-r border-gray-800 overflow-y-auto'>
             <div className='flex justify-between items-start mb-6'>
               <div>
-                <h2 className='text-2xl font-bold'>{stagingModalFolder.name}</h2>
-                <p className='text-gray-500 text-sm mt-1'>{stagingModalFolder.type === 'movie' ? '🎬 Movie' : '📺 TV Show'}</p>
+                <h2 className='text-2xl font-bold flex items-center space-x-3'>
+                  {stagingModalFolder.poster_url && <img src={stagingModalFolder.poster_url} className='w-8 h-8 rounded-lg object-cover' alt="Cover" />}
+                  <span>{stagingModalFolder.name}</span>
+                </h2>
+                <p className='text-gray-500 text-sm mt-1'>{stagingModalFolder.type === 'movie' ? '🎬 Movie' : stagingModalFolder.type === 'tv' ? '📺 TV Show' : '🎵 Music Album'}</p>
+                <button 
+                  onClick={() => startQrSession(stagingModalFolder.name)}
+                  className='mt-3 px-3 py-1.5 bg-blue-900/40 text-blue-400 border border-blue-500/30 hover:bg-blue-800/60 text-xs font-bold rounded-xl transition-colors flex items-center space-x-2'
+                >
+                  <span>📷</span>
+                  <span>Capture Cover with Phone</span>
+                </button>
               </div>
               <button 
                 onClick={() => {
@@ -2124,18 +2316,22 @@ function App() {
                     <label className='block text-xs text-gray-500 uppercase font-bold mb-2'>Media Type</label>
                     <select 
                       value={organizeMode} 
-                      onChange={e => setOrganizeMode(e.target.value as 'movie' | 'tv')}
+                      onChange={e => setOrganizeMode(e.target.value as 'movie' | 'tv' | 'album' | 'mixtape')}
                       className='w-full bg-gray-900 border border-gray-700 rounded-xl p-4 text-sm outline-none'
                     >
                       <option value="movie">Movie</option>
                       <option value="tv">TV Show</option>
+                      <option value="album">Album</option>
+                      <option value="mixtape">Mixtape</option>
                     </select>
                   </div>
                   
-                  {organizeMode === 'movie' ? (
+                  {organizeMode === 'movie' || organizeMode === 'album' || organizeMode === 'mixtape' ? (
                     <>
                       <div>
-                        <label className='block text-xs text-gray-500 uppercase font-bold mb-2'>Movie Title</label>
+                        <label className='block text-xs text-gray-500 uppercase font-bold mb-2'>
+                          {organizeMode === 'movie' ? 'Movie Title' : organizeMode === 'album' ? 'Album Title' : 'Mixtape Name'}
+                        </label>
                         <input type='text' value={organizeTitle} onChange={e=>setOrganizeTitle(e.target.value)} className='w-full bg-gray-900 border border-gray-700 rounded-xl p-4 text-sm outline-none' />
                       </div>
                       <div>
@@ -2212,7 +2408,11 @@ function App() {
                 onClick={() => openStagingModal(folder)}
               >
                 <div className='flex items-center space-x-4'>
-                  <span className='text-2xl'>{folder.type === 'movie' ? '🎬' : '📺'}</span>
+                  {folder.poster_url ? (
+                     <img src={folder.poster_url} className='w-12 h-12 object-cover rounded-xl shadow-lg border border-gray-700' alt="Cover" />
+                  ) : (
+                     <span className='text-2xl'>{folder.type === 'movie' ? '🎬' : folder.type === 'tv' ? '📺' : '🎵'}</span>
+                  )}
                   <div>
                     <h4 className='font-bold text-lg'>{folder.name}</h4>
                     <p className='text-xs text-gray-500'>
@@ -2233,6 +2433,32 @@ function App() {
 
   const renderTranscoding = () => (
     <div className='space-y-8 animate-in slide-in-from-bottom-4 duration-500'>
+      <div className='flex justify-center mb-4'>
+        <div className='bg-gray-900 border border-gray-700 rounded-xl p-1 inline-flex'>
+          <button 
+            onClick={() => {
+              setTranscodeMediaMode('video');
+              setProfileEditor({
+                name: 'New Profile', media_type: 'video', container: 'av_mkv', video_encoder: 'x264', video_quality: 22, audio_encoder: 'av_aac', audio_bitrate: 160, subtitle_mode: 'all', burn_subtitles: false
+              });
+            }}
+            className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${transcodeMediaMode === 'video' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-gray-200'}`}
+          >
+            🎬 Video Transcoding
+          </button>
+          <button 
+            onClick={() => {
+              setTranscodeMediaMode('audio');
+              setProfileEditor({
+                name: 'New Profile', media_type: 'audio', container: 'av_mkv', video_encoder: 'x264', video_quality: 22, audio_encoder: 'flac', audio_bitrate: 160, subtitle_mode: 'all', burn_subtitles: false
+              });
+            }}
+            className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${transcodeMediaMode === 'audio' ? 'bg-green-600 text-white' : 'text-gray-400 hover:text-gray-200'}`}
+          >
+            🎵 Audio Transcoding
+          </button>
+        </div>
+      </div>
       <div className='grid grid-cols-1 lg:grid-cols-3 gap-8'>
         
         {/* Left Column: Profiles & Ready Rips */}
@@ -2244,7 +2470,7 @@ function App() {
               <p className='text-sm text-gray-500 italic'>No profiles saved yet.</p>
             ) : (
               <div className='space-y-2'>
-                {transcodeProfiles.map(p => (
+                {transcodeProfiles.filter(p => (transcodeMediaMode === 'audio' ? p.media_type === 'audio' : (!p.media_type || p.media_type === 'video'))).map(p => (
                   <div key={p.id} className='flex justify-between items-center p-3 bg-gray-900/60 rounded-xl border border-gray-700 hover:border-blue-500 transition-colors cursor-pointer group' onClick={() => setProfileEditor(p as TranscodeProfile)}>
                     <div>
                       <p className='font-bold text-sm text-gray-200'>{p.name}</p>
@@ -2262,7 +2488,15 @@ function App() {
             )}
             <button 
               onClick={() => setProfileEditor({
-                name: 'New Profile', container: 'av_mkv', video_encoder: 'x264', video_quality: 22, audio_encoder: 'av_aac', audio_bitrate: 160, subtitle_mode: 'all', burn_subtitles: false
+                name: 'New Profile', 
+                media_type: transcodeMediaMode, 
+                container: 'av_mkv', 
+                video_encoder: 'x264', 
+                video_quality: 22, 
+                audio_encoder: transcodeMediaMode === 'audio' ? 'flac' : 'av_aac', 
+                audio_bitrate: 160, 
+                subtitle_mode: 'all', 
+                burn_subtitles: false
               })}
               className='w-full mt-4 py-3 border-2 border-dashed border-gray-600 rounded-xl text-sm font-bold text-gray-400 hover:border-gray-400 hover:text-gray-300 transition-colors'
             >
@@ -2272,84 +2506,120 @@ function App() {
 
           <div className='p-6 bg-gray-800/40 rounded-3xl border border-gray-700'>
              <div className='flex justify-between items-center mb-4'>
-               <h3 className='text-lg font-bold'>Ready to Transcode</h3>
+               <h3 className='text-lg font-bold'>Selected Profile(s)</h3>
                <button onClick={fetchReadyMedia} className='text-xs font-bold text-gray-500 hover:text-white transition-colors'>↻ Refresh</button>
              </div>
              
-             <div className='mb-4 space-y-2'>
-                <div className='flex justify-between items-center'>
-                  <p className='text-xs text-gray-500'>Select your default profile and target mode, then add to queue.</p>
-                  <label className='flex items-center space-x-2 text-xs font-bold text-gray-400 cursor-pointer'>
+             <div className='mb-4 space-y-3'>
+                <p className='text-xs text-gray-500'>Select your default profile and target mode, then add to queue.</p>
+                
+                <div className='flex flex-col gap-2'>
+                  <div 
+                    className='flex items-center space-x-2 p-2 bg-gray-900/60 rounded-xl border border-gray-700 cursor-pointer hover:bg-gray-800 transition-colors'
+                    onClick={() => saveSettings({...settings, multi_profile_transcode: !settings.multi_profile_transcode})}
+                  >
                     <input 
                       type="checkbox" 
                       checked={settings.multi_profile_transcode || false}
-                      onChange={e => setSettings({...settings, multi_profile_transcode: e.target.checked})}
-                      className="rounded border-gray-700 bg-gray-900"
+                      onChange={() => {}}
+                      className="rounded border-gray-700 bg-gray-900 pointer-events-none"
                     />
-                    <span>Multi-Profile Transcode</span>
-                  </label>
-                </div>
-                
-                <div className='flex flex-col gap-4'>
+                    <span className='text-sm text-gray-300 font-bold'>Multi-Profile Transcode</span>
+                  </div>
+                  
                   {settings.multi_profile_transcode ? (
-                    <div className='p-3 bg-gray-900/60 rounded-xl border border-gray-700'>
-                      <label className='text-xs font-bold text-gray-400 mb-2 block'>Select Profiles:</label>
-                      <div className='max-h-32 overflow-y-auto space-y-1 pr-2'>
-                        {transcodeProfiles.map(p => {
-                          const isSelected = (settings.handbrake_preset || '').split(',').includes(p.name);
-                          return (
-                            <label key={p.id} className='flex items-center space-x-2 text-sm text-white cursor-pointer hover:bg-gray-800 p-1 rounded'>
-                              <input 
-                                type="checkbox" 
-                                checked={isSelected}
-                                onChange={e => {
-                                  let selected = (settings.handbrake_preset || '').split(',').filter(x => x.trim() !== '');
-                                  if (e.target.checked) selected.push(p.name);
-                                  else selected = selected.filter(x => x !== p.name);
-                                  setSettings({...settings, handbrake_preset: selected.join(',')});
-                                }}
-                                className="rounded border-gray-700 bg-gray-900"
-                              />
-                              <span>{p.name}</span>
-                            </label>
-                          );
-                        })}
+                    <div className='flex flex-col space-y-2'>
+                      <div className='p-3 bg-gray-900/60 rounded-xl border border-gray-700'>
+                        <label className='text-xs font-bold text-gray-400 mb-2 block'>Select Profiles:</label>
+                        <div className='max-h-32 overflow-y-auto space-y-1 pr-2'>
+                          {transcodeProfiles.filter(p => transcodeMediaMode === 'audio' ? p.media_type === 'audio' : (!p.media_type || p.media_type === 'video')).map(p => {
+                            const settingKey = transcodeMediaMode === 'audio' ? 'default_audio_profile' : 'handbrake_preset';
+                            const isSelected = (settings[settingKey as keyof typeof settings] as string || '').split(',').includes(p.name);
+                            return (
+                              <label key={p.id} className='flex items-center space-x-2 text-sm text-white cursor-pointer hover:bg-gray-800 p-1 rounded'>
+                                <input 
+                                  type="checkbox" 
+                                  checked={isSelected}
+                                  onChange={e => {
+                                    let selected = (settings[settingKey as keyof typeof settings] as string || '').split(',').filter(x => x.trim() !== '');
+                                    if (e.target.checked) selected.push(p.name);
+                                    else selected = selected.filter(x => x !== p.name);
+                                    saveSettings({...settings, [settingKey]: selected.join(',')});
+                                  }}
+                                  className="rounded border-gray-700 bg-gray-900"
+                                />
+                                <span>{p.name}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
                       </div>
+                      
+                      {transcodeMediaMode !== 'audio' && (
+                        <div className='flex items-center space-x-2 p-2 bg-gray-900/60 rounded-xl border border-gray-700'>
+                          <label className='text-xs font-bold text-gray-400'>Target:</label>
+                          <select 
+                            value={transcodeTargetMode} 
+                            onChange={e => setTranscodeTargetMode(e.target.value as 'main' | 'all')}
+                            className='bg-transparent text-xs font-bold focus:outline-none text-white w-full'
+                          >
+                            <option value="main">Main Feature Only</option>
+                            <option value="all">Main Feature + Extras</option>
+                          </select>
+                        </div>
+                      )}
                     </div>
                   ) : (
-                    <div className='flex items-center space-x-2 p-2 bg-gray-900/60 rounded-xl border border-gray-700'>
-                      <label className='text-xs font-bold text-gray-400'>Profile:</label>
-                      <select 
-                        value={settings.handbrake_preset || ''} 
-                        onChange={e => setSettings({...settings, handbrake_preset: e.target.value})}
-                        className='bg-transparent text-xs font-bold focus:outline-none text-white w-full'
-                      >
-                        {transcodeProfiles.map(p => (
-                          <option key={p.id} value={p.name}>{p.name}</option>
-                        ))}
-                      </select>
+                    <div className='flex flex-col space-y-2'>
+                      <div className='flex items-center space-x-2 p-2 bg-gray-900/60 rounded-xl border border-gray-700'>
+                        <label className='text-xs font-bold text-gray-400'>Video Profile:</label>
+                        <select 
+                          value={settings.handbrake_preset || ''} 
+                          onChange={e => saveSettings({...settings, handbrake_preset: e.target.value})}
+                          className='bg-transparent text-xs font-bold focus:outline-none text-white w-full'
+                        >
+                          <option value="">(None)</option>
+                          {transcodeProfiles.filter(p => !p.media_type || p.media_type === 'video').map(p => (
+                            <option key={p.id} value={p.name}>{p.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      
+                      <div className='flex items-center space-x-2 p-2 bg-gray-900/60 rounded-xl border border-gray-700'>
+                        <label className='text-xs font-bold text-gray-400'>Target:</label>
+                        <select 
+                          value={transcodeTargetMode} 
+                          onChange={e => setTranscodeTargetMode(e.target.value as 'main' | 'all')}
+                          className='bg-transparent text-xs font-bold focus:outline-none text-white w-full'
+                        >
+                          <option value="main">Main Feature Only</option>
+                          <option value="all">Main Feature + Extras</option>
+                        </select>
+                      </div>
+
+                      <div className='flex items-center space-x-2 p-2 bg-gray-900/60 rounded-xl border border-gray-700'>
+                        <label className='text-xs font-bold text-gray-400'>Audio Profile:</label>
+                        <select 
+                          value={settings.default_audio_profile || ''} 
+                          onChange={e => saveSettings({...settings, default_audio_profile: e.target.value})}
+                          className='bg-transparent text-xs font-bold focus:outline-none text-white w-full'
+                        >
+                          <option value="">(None)</option>
+                          {transcodeProfiles.filter(p => p.media_type === 'audio').map(p => (
+                            <option key={p.id} value={p.name}>{p.name}</option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
                   )}
-                  
-                  <div className='flex items-center space-x-2 p-2 bg-gray-900/60 rounded-xl border border-gray-700'>
-                    <label className='text-xs font-bold text-gray-400'>Target:</label>
-                    <select 
-                      value={transcodeTargetMode} 
-                      onChange={e => setTranscodeTargetMode(e.target.value as 'main' | 'all')}
-                      className='bg-transparent text-xs font-bold focus:outline-none text-white w-full'
-                    >
-                      <option value="main">Main Feature Only</option>
-                      <option value="all">Main Feature + Extras</option>
-                    </select>
-                  </div>
                 </div>
              </div>
 
              <div className='space-y-2 max-h-64 overflow-y-auto pr-2'>
-               {readyMedia.length === 0 ? (
-                 <p className='text-sm text-gray-500 italic'>No raw rips found in staging directory.</p>
+               {readyMedia.filter(m => transcodeMediaMode === 'audio' ? m.type === 'music' : m.type !== 'music').length === 0 ? (
+                 <p className='text-sm text-gray-500 italic'>No raw {transcodeMediaMode} rips found in staging directory.</p>
                ) : (
-                 [...readyMedia].sort((a, b) => {
+                 [...readyMedia].filter(m => transcodeMediaMode === 'audio' ? m.type === 'music' : m.type !== 'music').sort((a, b) => {
                    const aGray = finalizeMedia.some((f: any) => f.name === a.name) || transcodeJobs.some(j => j.group_name === a.name && ['queued', 'processing', 'running'].includes((j.status || '').toLowerCase())) ? 1 : 0;
                    const bGray = finalizeMedia.some((f: any) => f.name === b.name) || transcodeJobs.some(j => j.group_name === b.name && ['queued', 'processing', 'running'].includes((j.status || '').toLowerCase())) ? 1 : 0;
                    return aGray - bGray;
@@ -2379,21 +2649,31 @@ function App() {
                        </div>
                      </div>
                      <div className='flex items-center space-x-2 flex-shrink-0'>
-                       <button 
+                       <button
                          onClick={() => {
-                           const selectedNames = (settings.handbrake_preset || '').split(',').filter(x => x.trim() !== '');
+                           let selectedNames: string[];
+                           if (media.type === 'music') {
+                             selectedNames = (settings.default_audio_profile || '').split(',').filter(x => x.trim() !== '');
+                           } else {
+                             selectedNames = (settings.handbrake_preset || '').split(',').filter(x => x.trim() !== '');
+                           }
+                           
                            const defaultProfiles = transcodeProfiles.filter(p => selectedNames.includes(p.name));
                            const pIds = defaultProfiles.map(p => p.id).filter(id => id !== undefined) as number[];
                            
                            if (pIds.length > 0) {
                              startTranscode(media.path, pIds[0], transcodeTargetMode, pIds);
-                           } else if (transcodeProfiles.length > 0) {
-                             startTranscode(media.path, transcodeProfiles[0].id || 1, transcodeTargetMode);
+                           } else {
+                             const fallbackProfiles = transcodeProfiles.filter(p => (media.type === 'music' ? p.media_type === 'audio' : (!p.media_type || p.media_type === 'video')));
+                             if (fallbackProfiles.length > 0) {
+                               startTranscode(media.path, fallbackProfiles[0].id || 1, transcodeTargetMode);
+                             } else {
+                               alert(`Please create a ${media.type === 'music' ? 'audio' : 'video'} profile first!`);
+                             }
                            }
                          }} 
                          className={`px-3 py-1 rounded-lg text-xs font-bold transition-colors ${isGrayedOut ? 'bg-gray-800 text-gray-500 hover:bg-green-600 hover:text-white' : 'bg-green-600 hover:bg-green-500 text-white'}`}
-                         disabled={!settings.handbrake_preset && transcodeProfiles.length === 0}
-                         title={(!settings.handbrake_preset && transcodeProfiles.length === 0) ? 'Create a profile first' : isGrayedOut ? 'Already transcoded or in progress. Click to force queue again.' : ''}
+                         title={isGrayedOut ? 'Already transcoded or in progress. Click to force queue again.' : ''}
                        >
                          {isGrayedOut ? 'Re-Queue' : 'Add'}
                        </button>
@@ -2421,13 +2701,15 @@ function App() {
             </div>
 
             <div className='grid grid-cols-2 gap-6'>
-              <div className='space-y-4'>
-                <h4 className='text-sm font-bold text-blue-400 border-b border-gray-700 pb-2'>Video Settings</h4>
+              {(!profileEditor.media_type || profileEditor.media_type === 'video') ? (
+                <div className='space-y-4'>
+                  <h4 className='text-sm font-bold text-blue-400 border-b border-gray-700 pb-2'>Video Settings</h4>
                 <div>
                   <label className='block text-[10px] text-gray-500 uppercase font-bold mb-1' title="The codec used to compress the video. x264/x265 use CPU. QSV/NVENC use hardware acceleration (faster, but slightly lower quality at same bitrate).">Encoder</label>
                   <select value={profileEditor.video_encoder} onChange={e => setProfileEditor({...profileEditor, video_encoder: e.target.value})} className='w-full bg-gray-900 border border-gray-700 rounded-lg p-2 text-xs focus:border-blue-500 outline-none'>
                     <option value="x264">H.264 (x264)</option>
                     <option value="qsv_h264">H.264 (Intel QSV)</option>
+                    <option value="nvenc_h264">H.264 (Nvidia NVENC)</option>
                     <option value="x265">H.265 (x265)</option>
                     <option value="x265_10bit">H.265 10-bit (x265)</option>
                     <option value="svt_av1">AV1 (SVT-AV1)</option>
@@ -2488,18 +2770,34 @@ function App() {
                   <span>Enable Decomb/Deinterlace filter</span>
                 </label>
               </div>
+              ) : (
+                <div className='space-y-4'>
+                  <div className='p-4 bg-gray-900/60 rounded-xl border border-gray-700 text-xs text-gray-400'>
+                    This profile is configured for Audio compression. Video tracks will be discarded.
+                  </div>
+                </div>
+              )}
 
               <div className='space-y-4'>
                 <h4 className='text-sm font-bold text-green-400 border-b border-gray-700 pb-2'>Audio & Subtitles</h4>
                 <div>
                   <label className='block text-[10px] text-gray-500 uppercase font-bold mb-1' title="The format used to compress audio. 'Passthru' copies the exact original track perfectly without any quality loss.">Audio Encoder</label>
                   <select value={profileEditor.audio_encoder} onChange={e => setProfileEditor({...profileEditor, audio_encoder: e.target.value})} className='w-full bg-gray-900 border border-gray-700 rounded-lg p-2 text-xs focus:border-green-500 outline-none'>
-                    <option value="av_aac">AAC</option>
-                    <option value="copy:ac3">AC3 Passthru</option>
-                    <option value="copy:truehd">TrueHD Passthru</option>
-                    <option value="copy:dts">DTS Passthru</option>
-                    <option value="opus">Opus</option>
-                    <option value="flac16">FLAC 16-bit</option>
+                    {profileEditor.media_type === 'audio' ? (
+                      <>
+                        <option value="flac">FLAC (Lossless)</option>
+                        <option value="libmp3lame">MP3</option>
+                      </>
+                    ) : (
+                      <>
+                        <option value="av_aac">AAC</option>
+                        <option value="copy:ac3">AC3 Passthru</option>
+                        <option value="copy:truehd">TrueHD Passthru</option>
+                        <option value="copy:dts">DTS Passthru</option>
+                        <option value="opus">Opus</option>
+                        <option value="flac16">FLAC 16-bit</option>
+                      </>
+                    )}
                   </select>
                 </div>
                 {profileEditor.audio_encoder !== 'copy' && !profileEditor.audio_encoder.startsWith('copy:') && (
@@ -2513,37 +2811,54 @@ function App() {
                           <option value="7point1">7.1 Surround</option>
                         </select>
                       </div>
-                      <div>
-                        <label className='block text-[10px] text-gray-500 uppercase font-bold mb-1' title="Target audio bitrate. 160-192kbps is ideal for Stereo AAC.">Bitrate (kbps)</label>
-                        <input type='number' value={profileEditor.audio_bitrate} onChange={e => setProfileEditor({...profileEditor, audio_bitrate: parseInt(e.target.value)})} className='w-full bg-gray-900 border border-gray-700 rounded-lg p-2 text-xs' />
-                      </div>
+                      {profileEditor.audio_encoder !== 'flac' && profileEditor.audio_encoder !== 'flac16' && (
+                        <div>
+                          <label className='block text-[10px] text-gray-500 uppercase font-bold mb-1' title="Target audio bitrate. 192kbps is ideal for Stereo AAC, 320kbps for MP3.">Bitrate (kbps)</label>
+                          <select value={profileEditor.audio_bitrate} onChange={e => setProfileEditor({...profileEditor, audio_bitrate: parseInt(e.target.value)})} className='w-full bg-gray-900 border border-gray-700 rounded-lg p-2 text-xs focus:border-green-500 outline-none'>
+                            <option value="96">96 kbps</option>
+                            <option value="128">128 kbps</option>
+                            <option value="160">160 kbps</option>
+                            <option value="192">192 kbps</option>
+                            <option value="256">256 kbps</option>
+                            <option value="320">320 kbps</option>
+                          </select>
+                        </div>
+                      )}
                   </>
                 )}
                 
-                <div>
-                  <label className='block text-[10px] text-gray-500 uppercase font-bold mb-1' title="Determines which text tracks to extract from the disc.">Subtitle Selection</label>
-                  <select value={profileEditor.subtitle_mode} onChange={e => setProfileEditor({...profileEditor, subtitle_mode: e.target.value})} className='w-full bg-gray-900 border border-gray-700 rounded-lg p-2 text-xs focus:border-green-500 outline-none'>
-                    <option value="all">Include All Tracks</option>
-                    <option value="english">First English Track</option>
-                    <option value="none">None</option>
-                  </select>
-                </div>
-                {profileEditor.subtitle_mode !== 'none' && (
-                  <label className='flex items-center space-x-2 text-xs font-bold text-gray-300 cursor-pointer mt-2' title="Permanently burns the subtitles into the video pixels. Highly compatible, but cannot be turned off during playback.">
-                    <input type='checkbox' checked={profileEditor.burn_subtitles} onChange={e => setProfileEditor({...profileEditor, burn_subtitles: e.target.checked})} className='rounded bg-gray-900 border-gray-700 text-green-500 focus:ring-green-500' />
-                    <span>Hard-burn subtitles into video</span>
-                  </label>
+                {profileEditor.media_type !== 'audio' && (
+                  <>
+                    <div>
+                      <label className='block text-[10px] text-gray-500 uppercase font-bold mb-1' title="Determines which text tracks to extract from the disc.">Subtitle Selection</label>
+                      <select value={profileEditor.subtitle_mode} onChange={e => setProfileEditor({...profileEditor, subtitle_mode: e.target.value})} className='w-full bg-gray-900 border border-gray-700 rounded-lg p-2 text-xs focus:border-green-500 outline-none'>
+                        <option value="all">Include All Tracks</option>
+                        <option value="english">First English Track</option>
+                        <option value="none">None</option>
+                      </select>
+                    </div>
+                    {profileEditor.subtitle_mode !== 'none' && (
+                      <label className='flex items-center space-x-2 text-xs font-bold text-gray-300 cursor-pointer mt-2' title="Permanently burns the subtitles into the video pixels. Highly compatible, but cannot be turned off during playback.">
+                        <input type='checkbox' checked={profileEditor.burn_subtitles} onChange={e => setProfileEditor({...profileEditor, burn_subtitles: e.target.checked})} className='rounded bg-gray-900 border-gray-700 text-green-500 focus:ring-green-500' />
+                        <span>Hard-burn subtitles into video</span>
+                      </label>
+                    )}
+                  </>
                 )}
               </div>
             </div>
             
             <div className='mt-6 pt-4 border-t border-gray-700 flex justify-between items-center'>
                <div className='flex items-center space-x-2'>
-                 <label className='text-[10px] text-gray-500 uppercase font-bold' title="The final file wrapper. MKV supports far more audio/subtitle formats natively than MP4.">Container:</label>
-                 <select value={profileEditor.container} onChange={e => setProfileEditor({...profileEditor, container: e.target.value})} className='bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs outline-none'>
-                    <option value="av_mkv">MKV</option>
-                    <option value="av_mp4">MP4</option>
-                  </select>
+                 {profileEditor.media_type !== 'audio' && (
+                   <>
+                     <label className='text-[10px] text-gray-500 uppercase font-bold' title="The final file wrapper. MKV supports far more audio/subtitle formats natively than MP4.">Container:</label>
+                     <select value={profileEditor.container} onChange={e => setProfileEditor({...profileEditor, container: e.target.value})} className='bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs outline-none'>
+                        <option value="av_mkv">MKV</option>
+                        <option value="av_mp4">MP4</option>
+                      </select>
+                   </>
+                 )}
                </div>
                <button onClick={saveProfile} className='px-8 py-2 bg-blue-600 rounded-xl font-bold text-sm hover:bg-blue-500 transition-colors shadow-lg shadow-blue-900/20'>
                  Save Profile
@@ -2662,16 +2977,17 @@ function App() {
                       Reorder Queue (Smallest First)
                   </button>
               </div>
-              {(settings?.movies_export_path || settings?.tv_shows_export_path) && (
+              {(settings?.movies_export_path || settings?.tv_shows_export_path || settings?.music_export_path) && (
                   <div className='text-right'>
                       <p className='text-xs text-gray-500 uppercase font-bold'>Destinations</p>
                       {settings?.movies_export_path && <p className='text-sm text-blue-400 font-mono'>Movies: {settings.movies_export_path}</p>}
                       {settings?.tv_shows_export_path && <p className='text-sm text-purple-400 font-mono'>TV: {settings.tv_shows_export_path}</p>}
+                      {settings?.music_export_path && <p className='text-sm text-green-400 font-mono'>Music: {settings.music_export_path}</p>}
                   </div>
               )}
           </div>
           
-          {(!settings?.movies_export_path && !settings?.tv_shows_export_path) && (
+          {(!settings?.movies_export_path && !settings?.tv_shows_export_path && !settings?.music_export_path) && (
               <div className='bg-yellow-900/30 border border-yellow-700/50 p-4 rounded-xl mb-8 flex justify-between items-center'>
                   <div>
                       <h4 className='text-yellow-500 font-bold'>No Destinations Set</h4>
@@ -2728,12 +3044,19 @@ function App() {
                       return (
                           <div key={idx} className='bg-gray-900/80 p-6 rounded-2xl border border-gray-700 hover:border-blue-500/30 transition-all'>
                               <div className='flex justify-between items-center'>
-                                  <div>
-                                      <h3 className='text-xl font-bold'>{folder?.name || 'Unknown Folder'}</h3>
-                                      <p className='text-sm text-gray-400'>
-                                        {totalFiles} Transcoded File{totalFiles !== 1 && 's'} Ready
-                                        {hasError && <span className='ml-2 text-red-500 font-bold text-xs'>TRANSFER FAILED</span>}
-                                      </p>
+                                  <div className='flex items-center space-x-4'>
+                                      {folder.poster_url ? (
+                                         <img src={folder.poster_url} className='w-12 h-12 object-cover rounded-xl shadow-lg border border-gray-700' alt="Cover" />
+                                      ) : (
+                                         <span className='text-2xl'>{folder.type === 'movie' ? '🎬' : folder.type === 'tv' ? '📺' : '🎵'}</span>
+                                      )}
+                                      <div>
+                                          <h3 className='text-xl font-bold'>{folder?.name || 'Unknown Folder'}</h3>
+                                          <p className='text-sm text-gray-400'>
+                                            {totalFiles} Transcoded File{totalFiles !== 1 && 's'} Ready
+                                            {hasError && <span className='ml-2 text-red-500 font-bold text-xs'>TRANSFER FAILED</span>}
+                                          </p>
+                                      </div>
                                   </div>
                                   
                                   {isPushing ? (
@@ -2766,6 +3089,7 @@ function App() {
                                     </div>
                                   ) : (
                                   <div className='flex space-x-2'>
+                                      {folder.type === 'movie' && (
                                       <button
                                           onClick={async () => {
                                               if(!settings?.movies_export_path) {
@@ -2779,6 +3103,7 @@ function App() {
                                                       body: JSON.stringify({ folder_name: folder.name, type: 'movie' })
                                                   });
                                                   if(res.ok) {
+                                                      fetchTransferJobs();
                                                       alert("Transfer to Movies queued successfully!");
                                                   } else {
                                                       alert("Failed to queue transfer.");
@@ -2792,6 +3117,8 @@ function App() {
                                       >
                                           Push to Movies
                                       </button>
+                                      )}
+                                      {folder.type === 'tv' && (
                                       <button
                                           onClick={async () => {
                                               if(!settings?.tv_shows_export_path) {
@@ -2805,6 +3132,7 @@ function App() {
                                                       body: JSON.stringify({ folder_name: folder.name, type: 'tv' })
                                                   });
                                                   if(res.ok) {
+                                                      fetchTransferJobs();
                                                       alert("Transfer to TV Shows queued successfully!");
                                                   } else {
                                                       alert("Failed to queue transfer.");
@@ -2816,8 +3144,38 @@ function App() {
                                           disabled={!settings?.tv_shows_export_path}
                                           className={`px-4 py-2 rounded-xl font-bold transition-all shadow-lg ${settings?.tv_shows_export_path ? 'bg-purple-600 hover:bg-purple-500 shadow-purple-900/20' : 'bg-gray-800 text-gray-500 cursor-not-allowed'}`}
                                       >
-                                          Push to TV Shows
+                                          Push to TV
                                       </button>
+                                      )}
+                                      {folder.type === 'music' && (
+                                          <button
+                                              onClick={async () => {
+                                                  if(!settings?.music_export_path) {
+                                                      alert("Please configure a Music Export Path in Settings first.");
+                                                      return;
+                                                  }
+                                                  try {
+                                                      const res = await fetch(`http://localhost:8000/transcoding/push`, {
+                                                          method: 'POST',
+                                                          headers: {'Content-Type': 'application/json'},
+                                                          body: JSON.stringify({ folder_name: folder.name, type: 'music' })
+                                                      });
+                                                      if(res.ok) {
+                                                          fetchTransferJobs();
+                                                          alert("Transfer to Music queued successfully!");
+                                                      } else {
+                                                          alert("Failed to queue transfer.");
+                                                      }
+                                                  } catch(e) {
+                                                      alert("Error queuing transfer.");
+                                                  }
+                                              }}
+                                              disabled={!settings?.music_export_path}
+                                              className={`px-4 py-2 rounded-xl font-bold transition-all shadow-lg ${settings?.music_export_path ? 'bg-green-600 hover:bg-green-500 shadow-green-900/20' : 'bg-gray-800 text-gray-500 cursor-not-allowed'}`}
+                                          >
+                                              Push to Music
+                                          </button>
+                                      )}
                                   </div>
                                   )}
                               </div>
@@ -3009,6 +3367,16 @@ function App() {
               />
             </div>
             <div>
+              <label className='block text-xs text-gray-500 uppercase font-bold mb-2' title="MusicBrainz doesn't use API keys, but they ask for a contact email to prevent rate limiting.">MusicBrainz Contact Email (Optional)</label>
+              <input 
+                type='email' 
+                placeholder='Enter your email address...' 
+                value={settings.music_api_key || ''}
+                onChange={(e) => setSettings({...settings, music_api_key: e.target.value})}
+                className='w-full bg-gray-900 border border-gray-700 rounded-xl p-4 text-sm focus:border-blue-500 outline-none transition-colors' 
+              />
+            </div>
+            <div>
               <label className='block text-xs text-gray-500 uppercase font-bold mb-2'>MakeMKV Registration Key</label>
               <div className='flex space-x-2'>
                 <input 
@@ -3059,7 +3427,7 @@ function App() {
                   <span className='block text-sm font-bold text-gray-300 group-hover:text-white transition-colors'>Auto-Eject Disc</span>
                 </div>
               </label>
-              <label className='flex items-center space-x-3 cursor-pointer group mt-4' title="Bypass HandBrake entirely. Raw rips will be instantly moved to your TV/Movie export folders as soon as the disc finishes ripping.">
+              <label className='flex items-center space-x-3 cursor-pointer group mt-4' title="Bypass the transcoder entirely. Raw rips will be instantly moved to your TV/Movie/Music export folders as soon as the disc finishes ripping.">
                 <input 
                   type='checkbox' 
                   checked={settings.skip_transcoding_and_finalize ?? false}
@@ -3068,11 +3436,11 @@ function App() {
                 />
                 <div>
                   <span className='block text-sm font-bold text-yellow-400 group-hover:text-yellow-300 transition-colors'>Skip Transcoding (Direct to Final Destination)</span>
-                  <span className='block text-[10px] text-gray-500'>Skips HandBrake completely and just moves the raw rip.</span>
+                  <span className='block text-[10px] text-gray-500'>Skips conversion completely and just moves the raw rip.</span>
                 </div>
               </label>
               
-              <label className={`flex items-center space-x-3 cursor-pointer group mt-4 ${settings.skip_transcoding_and_finalize ? 'opacity-30 pointer-events-none' : ''}`} title="Automatically pushes completed disc rips directly into the Transcoding Studio queue using your default Multi-Profile selections.">
+              <label className={`flex items-center space-x-3 cursor-pointer group mt-4 ${settings.skip_transcoding_and_finalize ? 'opacity-30 pointer-events-none' : ''}`} title="Automatically pushes completed disc rips directly into the Transcoding Studio queue using your default Video and Audio profiles.">
                 <input 
                   type='checkbox' 
                   checked={settings.auto_transcode_rips ?? false}
@@ -3084,7 +3452,20 @@ function App() {
                   <span className='block text-sm font-bold text-green-400 group-hover:text-green-300 transition-colors'>Auto-Transcode Rips</span>
                 </div>
               </label>
-              <label className={`flex items-center space-x-3 cursor-pointer group mt-4 ${settings.skip_transcoding_and_finalize ? 'opacity-30 pointer-events-none' : ''}`} title="Automatically deletes the massive raw MKV file from your drive the moment all of its transcodes have successfully completed.">
+              {settings.auto_transcode_rips && (
+                <div className='ml-8 mt-2 flex items-center space-x-2'>
+                    <span className='text-xs text-gray-400'>Target:</span>
+                    <select 
+                      value={settings.auto_transcode_target || 'all'} 
+                      onChange={(e) => setSettings({...settings, auto_transcode_target: e.target.value})}
+                      className='bg-gray-800 text-xs border border-gray-700 rounded p-1 text-white'
+                    >
+                        <option value="all">Main Feature + Extras</option>
+                        <option value="main">Main Feature Only</option>
+                    </select>
+                </div>
+              )}
+              <label className={`flex items-center space-x-3 cursor-pointer group mt-4 ${settings.skip_transcoding_and_finalize ? 'opacity-30 pointer-events-none' : ''}`} title="Automatically deletes the massive raw MKV/WAV files from your drive the moment all of its transcodes have successfully completed.">
                 <input 
                   type='checkbox' 
                   checked={settings.auto_delete_rips ?? false}
@@ -3209,6 +3590,43 @@ function App() {
                       }
                   }}
                   className='px-4 bg-purple-600 hover:bg-purple-500 rounded-xl text-xs font-bold transition-colors shadow-lg shadow-purple-900/20'
+                  title='Verify the backend has read/write permissions to this path'
+                >
+                  Test Connection
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className='block text-xs text-gray-500 uppercase font-bold mb-2'>Final Music Export Path</label>
+              <div className='flex space-x-2'>
+                <input 
+                  type='text' 
+                  placeholder='/mnt/nas/Media/Music' 
+                  value={settings.music_export_path || ''}
+                  onChange={(e) => setSettings({...settings, music_export_path: e.target.value})}
+                  className='flex-1 bg-gray-900 border border-gray-700 rounded-xl p-4 text-sm focus:border-green-500 outline-none transition-colors font-mono' 
+                />
+                <button 
+                  onClick={async () => {
+                      if(!settings.music_export_path) return;
+                      try {
+                          const res = await fetch('http://localhost:8000/settings/validate-path', {
+                              method: 'POST',
+                              headers: {'Content-Type': 'application/json'},
+                              body: JSON.stringify({path: settings.music_export_path})
+                          });
+                          const data = await res.json();
+                          if(data.valid) {
+                              alert("✅ Success: " + data.message);
+                          } else {
+                              alert("❌ Error: " + data.message);
+                          }
+                      } catch(e) {
+                          alert("Failed to reach backend.");
+                      }
+                  }}
+                  className='px-4 bg-green-600 hover:bg-green-500 rounded-xl text-xs font-bold transition-colors shadow-lg shadow-green-900/20'
                   title='Verify the backend has read/write permissions to this path'
                 >
                   Test Connection
@@ -3378,6 +3796,7 @@ function App() {
             {activeTab === 'settings' && renderSettings()}
             
             {/* Global Modals */}
+            {renderQrModal()}
             {renderStagingModal()}
             {renderTvModal()}
             

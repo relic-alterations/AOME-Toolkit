@@ -8,10 +8,12 @@ class Settings(Base):
     id = Column(Integer, primary_key=True, index=True)
     tmdb_api_key = Column(String, nullable=True)
     omdb_api_key = Column(String, nullable=True)
+    music_api_key = Column(String, nullable=True)
     makemkv_key = Column(String, nullable=True)
     default_rips_path = Column(String, default="~/AOME/rips")
     default_transcodes_path = Column(String, default="~/AOME/transcodes")
     handbrake_preset = Column(String, default="Fast 1080p30")
+    default_audio_profile = Column(String, nullable=True)
     default_rip_mode = Column(String, default="all") # all, main, selection
     default_subtitle_mode = Column(String, default="all") # all, english
     max_concurrent_transcodes = Column(Integer, default=1)
@@ -21,9 +23,11 @@ class Settings(Base):
     final_destination_path = Column(String, nullable=True)
     tv_shows_export_path = Column(String, nullable=True)
     movies_export_path = Column(String, nullable=True)
+    music_export_path = Column(String, nullable=True)
     auto_delete_transcodes_after_push = Column(Boolean, default=False)
     verify_checksum_on_push = Column(Boolean, default=True)
     auto_transcode_rips = Column(Boolean, default=False)
+    auto_transcode_target = Column(String, default="all") # all, main
     auto_transfer_transcodes = Column(Boolean, default=False)
     generate_comparison_html = Column(Boolean, default=False)
     comparison_image_count = Column(Integer, default=10)
@@ -59,6 +63,7 @@ class TranscodeProfile(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, nullable=False)
+    media_type = Column(String, default="video") # video or audio
     container = Column(String, default="av_mkv")
     video_encoder = Column(String, default="x264")
     video_quality = Column(Integer, default=22) # Constant Quality (RF)

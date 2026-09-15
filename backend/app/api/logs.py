@@ -29,7 +29,7 @@ def get_log_history(db: Session = Depends(get_db)):
         history.append({
             "id": f"transcode_{t.id}",
             "type": "transcode",
-            "title": os.path.basename(t.input_path),
+            "title": f"{os.path.basename(t.input_path)} [#{t.id}]",
             "status": t.status,
             "created_at": t.created_at,
             "log_path": t.log_path
@@ -89,7 +89,7 @@ async def cancel_log(log_id: str, db: Session = Depends(get_db)):
                 raise HTTPException(status_code=404, detail="Transcode job not found")
             
             from app.api.transcoding import transcoder
-            await transcoder.cancel_job(job.input_path)
+            await transcoder.cancel_job(job.id)
             
             job.status = "cancelled"
             db.commit()

@@ -10,6 +10,7 @@ class DriveManager:
 
     def __init__(self, makemkvcon_path="makemkvcon"):
         self.makemkvcon_path = makemkvcon_path
+        self.drive_cache = {}
 
     async def _get_makemkv_env(self):
         """
@@ -77,7 +78,75 @@ class DriveManager:
                         except:
                             pass
                             
-                        disc_name = await self._get_disc_label(dev_path)
+                        size = "0"
+                        # Use CDROM_DRIVE_STATUS ioctl to reliably check if disc is physically present
+                        try:
+                            import fcntl
+                            CDROM_DRIVE_STATUS = 0x5326
+                            fd = os.open(dev_path, os.O_RDONLY | os.O_NONBLOCK)
+                            status = fcntl.ioctl(fd, CDROM_DRIVE_STATUS)
+                            os.close(fd)
+                            if status == 4: # CDS_DISC_OK
+                                try:
+                                    with open(f"/sys/block/{dev}/size", "r") as f:
+                                        size = f.read().strip()
+                                        if size == "0":
+                                            size = "unknown_size_but_present"
+                                except:
+                                    size = "unknown_size_but_present"
+                        except:
+                            pass
+                            
+                        cache_key = f"{dev_path}_{size}"
+                        if size == "0":
+                            disc_name = None
+                            is_audio = False
+                            artist = None
+                            year = None
+                            all_matches = []
+                        elif cache_key in self.drive_cache:
+                            cached = self.drive_cache[cache_key]
+                            disc_name = cached["disc_name"]
+                            is_audio = cached["is_audio"]
+                            artist = cached["artist"]
+                            year = cached["year"]
+                            all_matches = cached["all_matches"]
+                        else:
+                            disc_name = await self._get_disc_label(dev_path)
+                            is_audio = False
+                            artist = None
+                            year = None
+                            all_matches = []
+                            
+                            if not disc_name:
+                                audio_toc = await self._check_audio_cd(dev_path)
+                                if audio_toc:
+                                    is_audio = True
+                                    # Try to identify via MusicBrainz TOC
+                                    try:
+                                        import asyncio
+                                        from app.core.musicbrainz import identify_cd
+                                        loop = asyncio.get_event_loop()
+                                        toc_str = audio_toc["toc"] if isinstance(audio_toc, dict) else (audio_toc if isinstance(audio_toc, str) else None)
+                                        cd_text = audio_toc if isinstance(audio_toc, dict) else None
+                                        info = await loop.run_in_executor(None, identify_cd, dev_path, toc_str, cd_text)
+                                        if info:
+                                            disc_name = info["title"]
+                                            artist = info["artist"]
+                                            year = info["year"]
+                                            all_matches = info.get("all_matches", [])
+                                        else:
+                                            disc_name = "Audio CD"
+                                    except:
+                                        disc_name = "Audio CD"
+                            if disc_name != "Audio CD":
+                                self.drive_cache[cache_key] = {
+                                    "disc_name": disc_name,
+                                    "is_audio": is_audio,
+                                    "artist": artist,
+                                    "year": year,
+                                    "all_matches": all_matches
+                                }
                         
                         drives.append({
                             "index": index,
@@ -85,8 +154,12 @@ class DriveManager:
                             "enabled": True,
                             "drive_name": model,
                             "disc_name": disc_name if disc_name else None,
+                            "artist": artist,
+                            "year": year,
+                            "all_matches": all_matches,
                             "device_path": dev_path,
-                            "has_disc": bool(disc_name)
+                            "has_disc": bool(disc_name),
+                            "is_audio": is_audio
                         })
                         index += 1
                 drives.sort(key=lambda x: x["device_path"])
@@ -211,6 +284,70 @@ class DriveManager:
             except:
                 pass
             return None
+
+    async def _check_audio_cd(self, dev_path):
+        """
+        Quick check if the drive contains an Audio CD.
+        """
+        try:
+            # Check if a cd-info process is already running for this device to prevent zombies
+            check_proc = await asyncio.create_subprocess_shell(
+                "pgrep -x cd-info",
+                stdout=asyncio.subprocess.PIPE
+            )
+            stdout, _ = await check_proc.communicate()
+            if stdout.strip():
+                return False
+
+            process = await asyncio.create_subprocess_exec(
+                "cd-info", "--no-device-info", "--no-cddb", "-C", dev_path,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            try:
+                stdout, _ = await asyncio.wait_for(process.communicate(), timeout=25.0)
+                output = stdout.decode()
+                output_lower = output.lower()
+                if "cd-da" in output_lower or "audio" in output_lower:
+                    import re
+                    lines = output.splitlines()
+                    tracks = []
+                    leadout = None
+                    cd_text_title = None
+                    cd_text_artist = None
+                    for line in lines:
+                        line = line.strip()
+                        if not line: continue
+                        if line.startswith("Title:"):
+                            cd_text_title = line.split("Title:", 1)[1].strip()
+                        elif line.startswith("Performer:"):
+                            cd_text_artist = line.split("Performer:", 1)[1].strip()
+                            
+                        m = re.match(r'^\s*(\d+):\s+\d+:\d+:\d+\s+(\d+)\s+audio', line)
+                        if m:
+                            tracks.append((int(m.group(1)), int(m.group(2)) + 150))
+                        m_leadout = re.match(r'^\s*170:\s+\d+:\d+:\d+\s+(\d+)\s+leadout', line)
+                        if m_leadout:
+                            leadout = int(m_leadout.group(1)) + 150
+                    if tracks and leadout:
+                        toc_parts = [str(tracks[0][0]), str(tracks[-1][0]), str(leadout)]
+                        for t in tracks:
+                            toc_parts.append(str(t[1]))
+                        return {
+                            "toc": "+".join(toc_parts),
+                            "title": cd_text_title,
+                            "artist": cd_text_artist
+                        }
+                    return True
+                return False
+            except asyncio.TimeoutError:
+                try:
+                    process.kill()
+                except:
+                    pass
+                return False
+        except Exception:
+            return False
 
     def _parse_makemkv_output(self, output):
         """

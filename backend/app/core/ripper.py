@@ -262,9 +262,9 @@ class Ripper:
                                 
                     elif settings and settings.auto_transcode_rips and self.active_rips[device_path]["status"] == "completed":
                         preset_names = [x.strip() for x in (settings.handbrake_preset or "").split(",") if x.strip()]
-                        profiles = db.query(TranscodeProfile).filter(TranscodeProfile.name.in_(preset_names)).all() if preset_names else []
+                        profiles = db.query(TranscodeProfile).filter(TranscodeProfile.name.in_(preset_names), (TranscodeProfile.media_type == "video") | (TranscodeProfile.media_type == None)).all() if preset_names else []
                         if not profiles:
-                            first_p = db.query(TranscodeProfile).first() # Fallback to any profile
+                            first_p = db.query(TranscodeProfile).filter((TranscodeProfile.media_type == "video") | (TranscodeProfile.media_type == None)).first()
                             if first_p:
                                 profiles = [first_p]
                             
@@ -272,8 +272,9 @@ class Ripper:
                             from app.api.transcoding import start_job
                             target_dir = metadata.get("target_dir", self.active_rips[device_path]["output_dir"])
                             p_ids = [p.id for p in profiles]
+                            target_mode = settings.auto_transcode_target if hasattr(settings, 'auto_transcode_target') and settings.auto_transcode_target else "all"
                             try:
-                                await start_job(input_path=target_dir, profile_id=p_ids[0], profile_ids=",".join(map(str, p_ids)), target_mode="all", db=db)
+                                await start_job(input_path=target_dir, profile_id=p_ids[0], profile_ids=",".join(map(str, p_ids)), target_mode=target_mode, db=db)
                             except Exception as e:
                                 print(f"Auto-transcode failed to queue: {e}")
 

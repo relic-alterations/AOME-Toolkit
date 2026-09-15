@@ -27,7 +27,7 @@ case "$DISTRO" in
             handbrake-cli \
             git curl base-devel \
             lsscsi util-linux nodejs npm \
-            jre-openjdk-headless ffmpeg
+            jre-openjdk-headless ffmpeg cdparanoia
             
         echo "[1.5/6] Checking for AUR helper to install MakeMKV..."
         if command -v paru &> /dev/null; then
@@ -44,14 +44,14 @@ case "$DISTRO" in
         sudo apt install -y \
             python3 python3-pip python3-venv \
             makemkv-bin makemkv-oss \
-            handbrake-cli ffmpeg \
+            handbrake-cli ffmpeg cdparanoia \
             git curl build-essential \
             lsscsi util-linux nodejs npm \
             default-jre-headless
         ;;
     *)
         echo "Unsupported distribution: $DISTRO"
-        echo "Please install dependencies manually: python3, makemkv, handbrake-cli, git, curl, lsscsi"
+        echo "Please install dependencies manually: python3, makemkv, handbrake-cli, git, curl, lsscsi, cdparanoia"
         exit 1
         ;;
 esac
@@ -90,6 +90,15 @@ if [ -f "frontend/package.json" ]; then
         echo "Installing using package.json..."
         (cd "$FRONTEND_DEPS_DIR" && npm install --silent)
     fi
+    
+    # Copy Vite environment files if they exist
+    if [ -f "frontend/.env" ]; then
+        cp frontend/.env "$FRONTEND_DEPS_DIR/"
+    fi
+    
+    echo "Copying dereferenced node_modules back to flash drive to bypass exFAT symlink limitations..."
+    rm -rf frontend/node_modules
+    cp -rL "$FRONTEND_DEPS_DIR/node_modules" frontend/
 fi
 
 # 6. Permissions & Orchestration
@@ -107,6 +116,20 @@ esac
 
 if [ -f "aome.sh" ]; then
     chmod +x aome.sh
+fi
+
+# 6.5 Firewall Configuration
+echo "[5.5/6] Configuring Firewall..."
+if [ -f /.dockerenv ]; then
+    echo "Running inside Docker. Skipping UFW firewall configuration..."
+else
+    if command -v ufw &> /dev/null; then
+        echo "Opening ports 5173 (Frontend) and 8000 (Backend) via UFW..."
+        sudo ufw allow 5173/tcp || true
+        sudo ufw allow 8000/tcp || true
+    else
+        echo "UFW not found. If you use a firewall, ensure TCP ports 5173 and 8000 are open."
+    fi
 fi
 
 # 7. Final Steps

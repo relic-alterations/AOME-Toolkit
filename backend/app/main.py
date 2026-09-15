@@ -73,6 +73,7 @@ async def get_drives():
     """
     result = await drive_manager_instance.list_drives()
     from app.api.rips import ripper
+    from app.core.audio_ripper import audio_ripper_instance
     
     raw_drives = result.get("drives", [])
     
@@ -84,7 +85,8 @@ async def get_drives():
             unique_drives[path] = d
     drives = list(unique_drives.values())
     
-    active_paths = list(ripper.active_rips.keys())
+    combined_active_rips = {**ripper.active_rips, **audio_ripper_instance.active_rips}
+    active_paths = list(combined_active_rips.keys())
     
     from app.db.session import SessionLocal
     from app.db.models.models import DriveMapping
@@ -101,10 +103,11 @@ async def get_drives():
             d["custom_name"] = mappings[path]
             
         if path in active_paths:
-            status = ripper.get_status(path)
+            status = combined_active_rips.get(path, {})
             # Clear old finished statuses if the disc has been removed
             if not d.get("has_disc") and status.get("status") in ["completed", "failed", "needs_split", "cancelled"]:
                 ripper.active_rips.pop(path, None)
+                audio_ripper_instance.active_rips.pop(path, None)
                 d["rip_status"] = {"status": "idle"}
             else:
                 d["rip_status"] = status
@@ -112,14 +115,14 @@ async def get_drives():
             
     # Inject locked drives MakeMKV excluded
     for path in active_paths:
-        rip = ripper.get_status(path)
+        rip = combined_active_rips.get(path, {})
         drives.append({
             "index": 999,
             "visible": True,
             "enabled": True,
             "drive_name": f"Locked Drive {path}",
             "custom_name": mappings.get(path),
-            "disc_name": rip.get("metadata", {}).get("title", "Active Rip"),
+            "disc_name": rip.get("metadata", {}).get("title", "Active Rip") if "metadata" in rip else rip.get("title", "Active Audio Rip"),
             "device_path": path,
             "has_disc": True,
             "rip_status": rip

@@ -67,6 +67,39 @@ def search_metadata(query: str, type: str = "movie", db: Session = Depends(get_d
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"TMDB Error: {e}")
             
+    elif type == "album":
+        # Search MusicBrainz
+        # MB requires a proper User-Agent
+        email = "your-email@example.com"
+        if settings and settings.music_api_key:
+            email = settings.music_api_key
+        headers = {'User-Agent': f'AOME/1.0 ( {email} )'}
+        mb_url = f"https://musicbrainz.org/ws/2/release/?query={requests.utils.quote(query)}&fmt=json"
+        try:
+            resp = requests.get(mb_url, headers=headers, timeout=10)
+            data = resp.json()
+            if "releases" in data:
+                for item in data["releases"][:10]:
+                    year = item.get("date", "").split("-")[0] if item.get("date") else ""
+                    artist = "Unknown Artist"
+                    if item.get("artist-credit") and len(item["artist-credit"]) > 0:
+                        artist = item["artist-credit"][0].get("name", "Unknown Artist")
+                        
+                    # CoverArtArchive
+                    mbid = item.get("id")
+                    poster = f"https://coverartarchive.org/release/{mbid}/front-250"
+                    
+                    results.append({
+                        "id": mbid,
+                        "title": item.get("title"),
+                        "artist": artist,
+                        "year": year,
+                        "poster": poster,
+                        "type": "album"
+                    })
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"MusicBrainz Error: {e}")
+            
     else:
         raise HTTPException(status_code=400, detail="Invalid search type")
 

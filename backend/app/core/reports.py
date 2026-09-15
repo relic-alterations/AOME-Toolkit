@@ -57,79 +57,74 @@ def generate_comparison_report(file_pairs: list, output_dir: str, title_name: st
         if not file_pairs:
             return
 
-        num_screenshots = 10
-        valid_pairs = []
-        durations = []
         for r, t in file_pairs:
+            # We want one report per profile. So we process each file pair individually.
+            t_basename = os.path.basename(t)
+            name_no_ext = os.path.splitext(t_basename)[0]
+            html_path = os.path.join(output_dir, f"{name_no_ext}_Comparison_Report.html")
+            
+            # If a valid report already exists, skip it to save time
+            if os.path.exists(html_path) and os.path.getsize(html_path) > 0:
+                print(f"Report already exists for {name_no_ext}. Skipping.")
+                continue
+                
             d = get_video_duration(t)
             if d <= 0:
                 d = get_video_duration(r)
-            if d > 0:
-                valid_pairs.append((r, t))
-                durations.append(d)
+            if d <= 0:
+                print(f"Could not determine video duration for {t}. Skipping comparison report.")
+                continue
 
-        if not valid_pairs:
-            print("Could not determine video durations. Skipping comparison report.")
-            return
-
-        total_files = len(valid_pairs)
-        allocations = [0] * total_files
-        for i in range(num_screenshots):
-            idx = int(i * total_files / num_screenshots)
-            allocations[idx] += 1
-            
-        timestamps_plan = []
-        for i, (r, t) in enumerate(valid_pairs):
-            count = allocations[i]
-            if count > 0:
-                d = durations[i]
-                start_time = d * 0.1
-                end_time = d * 0.9
-                if count == 1:
-                    timestamps_plan.append((r, t, d * 0.5))
-                else:
-                    interval = (end_time - start_time) / (count - 1)
-                    for j in range(count):
-                        timestamps_plan.append((r, t, start_time + (j * interval)))
-            
-        temp_dir = os.path.join(output_dir, ".aome_tmp_assets")
-        os.makedirs(temp_dir, exist_ok=True)
-        
-        raw_images = []
-        transcoded_images = []
-        
-        # Extract images
-        for i, (r, t, ts) in enumerate(timestamps_plan):
-            raw_out = os.path.join(temp_dir, f"raw_{i}.jpg")
-            trans_out = os.path.join(temp_dir, f"trans_{i}.jpg")
-            extract_frame(r, ts, raw_out)
-            extract_frame(t, ts, trans_out)
-            
-            if os.path.exists(raw_out) and os.path.exists(trans_out):
-                raw_images.append((ts, file_to_base64(raw_out)))
-                transcoded_images.append((ts, file_to_base64(trans_out)))
+            num_screenshots = 10
+            timestamps_plan = []
+            start_time = d * 0.1
+            end_time = d * 0.9
+            interval = (end_time - start_time) / (num_screenshots - 1)
+            for j in range(num_screenshots):
+                timestamps_plan.append((r, t, start_time + (j * interval)))
                 
-        # Extract video (pick the middle one)
-        has_video = False
-        raw_video_b64 = ""
-        trans_video_b64 = ""
-        if getattr(settings, 'include_video_comparison', False) and timestamps_plan:
-            mid_idx = len(timestamps_plan) // 2
-            r, t, video_ts = timestamps_plan[mid_idx]
-            raw_vid_out = os.path.join(temp_dir, "raw_clip.mp4")
-            trans_vid_out = os.path.join(temp_dir, "trans_clip.mp4")
-            extract_clip(r, video_ts, 10, raw_vid_out, reencode=True)
-            extract_clip(t, video_ts, 10, trans_vid_out, reencode=True)
+            temp_dir = os.path.join(output_dir, ".aome_tmp_assets")
+            os.makedirs(temp_dir, exist_ok=True)
             
-            if os.path.exists(raw_vid_out) and os.path.exists(trans_vid_out):
-                raw_video_b64 = file_to_base64(raw_vid_out)
-                trans_video_b64 = file_to_base64(trans_vid_out)
-                has_video = True
+            raw_images = []
+            transcoded_images = []
+            
+            # Extract images
+            for i, (raw_path, trans_path, ts) in enumerate(timestamps_plan):
+                raw_out = os.path.join(temp_dir, f"raw_{i}.jpg")
+                trans_out = os.path.join(temp_dir, f"trans_{i}.jpg")
+                extract_frame(raw_path, ts, raw_out)
+                extract_frame(trans_path, ts, trans_out)
                 
-        # Generate HTML
-        html_path = os.path.join(output_dir, f"{title_name}_Comparison_Report.html")
-        with open(html_path, "w") as f:
-            f.write(f'''<!DOCTYPE html>
+                if os.path.exists(raw_out) and os.path.exists(trans_out):
+                    raw_images.append((ts, file_to_base64(raw_out)))
+                    transcoded_images.append((ts, file_to_base64(trans_out)))
+                    
+            # Extract video (pick the middle one)
+            has_video = False
+            raw_video_b64 = ""
+            trans_video_b64 = ""
+            video_ts = 0
+            if getattr(settings, 'include_video_comparison', False) and timestamps_plan:
+                mid_idx = len(timestamps_plan) // 2
+                raw_path, trans_path, video_ts = timestamps_plan[mid_idx]
+                raw_vid_out = os.path.join(temp_dir, "raw_clip.mp4")
+                trans_vid_out = os.path.join(temp_dir, "trans_clip.mp4")
+                extract_clip(raw_path, video_ts, 10, raw_vid_out, reencode=True)
+                extract_clip(trans_path, video_ts, 10, trans_vid_out, reencode=True)
+                
+                if os.path.exists(raw_vid_out) and os.path.exists(trans_vid_out):
+                    raw_video_b64 = file_to_base64(raw_vid_out)
+                    trans_video_b64 = file_to_base64(trans_vid_out)
+                    has_video = True
+                    
+            # Generate HTML
+            t_basename = os.path.basename(t)
+            name_no_ext = os.path.splitext(t_basename)[0]
+            html_path = os.path.join(output_dir, f"{name_no_ext}_Comparison_Report.html")
+            
+            with open(html_path, "w") as f:
+                f.write(f'''<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
@@ -154,17 +149,18 @@ def generate_comparison_report(file_pairs: list, output_dir: str, title_name: st
     <div class="container">
         <h1>Quality Comparison Report: {name_no_ext}</h1>
 ''')
-            
-            for i, (ts, raw_b64) in enumerate(raw_images):
-                trans_b64 = transcoded_images[i][1]
-                mins = int(ts // 60)
-                secs = int(ts % 60)
-                f.write(f'''
+                
+                for i, (ts, raw_b64) in enumerate(raw_images):
+                    if i < len(transcoded_images):
+                        trans_b64 = transcoded_images[i][1]
+                        mins = int(ts // 60)
+                        secs = int(ts % 60)
+                        f.write(f'''
         <div class="comparison-block">
             <div class="labels">
                 <span class="label-raw">Raw Rip</span>
                 <span class="timestamp">Timestamp: {mins}:{secs:02d}</span>
-                <span class="label-trans">Transcode</span>
+                <span class="label-trans">Transcode ({name_no_ext})</span>
             </div>
             <div class="comparison-slider" onmousemove="slide(event, this)" ontouchmove="slide(event, this)" style="background: #000;">
                 <img src="data:image/jpeg;base64,{raw_b64}" style="display: block; width: 100%; height: auto; visibility: hidden;" alt="Spacer">
@@ -174,11 +170,11 @@ def generate_comparison_report(file_pairs: list, output_dir: str, title_name: st
             </div>
         </div>
 ''')
-            
-            if has_video:
-                mins = int(video_ts // 60)
-                secs = int(video_ts % 60)
-                f.write(f'''
+                
+                if has_video:
+                    mins = int(video_ts // 60)
+                    secs = int(video_ts % 60)
+                    f.write(f'''
         <h2 style="text-align: center; color: #facc15; margin-top: 4rem;">Video Comparison (10 seconds)</h2>
         <div class="comparison-block" style="cursor: pointer;" onclick="togglePlay(this)">
             <div class="labels">
@@ -194,27 +190,23 @@ def generate_comparison_report(file_pairs: list, output_dir: str, title_name: st
             </div>
         </div>
 ''')
-            
-            f.write('''
+                
+                f.write('''
     </div>
     <script>
         function slide(e, container) {
-            let clientX = e.clientX;
-            if(e.touches && e.touches.length > 0) {
-                clientX = e.touches[0].clientX;
-            }
-            const rect = container.getBoundingClientRect();
-            let x = clientX - rect.left;
+            var rect = container.getBoundingClientRect();
+            var x = (e.clientX || (e.touches && e.touches[0].clientX)) - rect.left;
+            var w = rect.width;
             if (x < 0) x = 0;
-            if (x > rect.width) x = rect.width;
-            const percentage = (x / rect.width) * 100;
-            container.querySelector('.img-overlay').style.clipPath = `inset(0 ${100 - percentage}% 0 0)`;
-            container.querySelector('.slider-handle').style.left = percentage + '%';
+            if (x > w) x = w;
+            var pct = (x / w) * 100;
+            container.querySelector('.img-overlay').style.clipPath = `inset(0 ${100 - pct}% 0 0)`;
+            container.querySelector('.slider-handle').style.left = `${pct}%`;
         }
-        
-        function togglePlay(block) {
-            const videos = block.querySelectorAll('video');
-            videos.forEach(v => {
+        function togglePlay(container) {
+            var vids = container.querySelectorAll('video');
+            vids.forEach(v => {
                 if (v.paused) v.play();
                 else v.pause();
             });
@@ -223,22 +215,14 @@ def generate_comparison_report(file_pairs: list, output_dir: str, title_name: st
 </body>
 </html>
 ''')
+            
+            try:
+                import shutil
+                if os.path.exists(temp_dir):
+                    shutil.rmtree(temp_dir)
+            except Exception:
+                pass
 
-        # Clean up temp assets
-        import shutil
-        try:
-            shutil.rmtree(temp_dir)
-        except Exception as e:
-            print(f"Error deleting temp assets: {e}")
-            
-        # Dump metadata for stats export
-        metadata = {
-            "timestamps": [f"{int(ts // 60)}:{int(ts % 60):02d}" for ts in timestamps],
-            "video_timestamp": f"{int(video_ts // 60)}:{int(video_ts % 60):02d}" if has_video else None
-        }
-        with open(os.path.join(output_dir, "comparison_metadata.json"), "w") as f:
-            json.dump(metadata, f)
-            
     except Exception as e:
         print(f"Failed to generate report: {e}")
 

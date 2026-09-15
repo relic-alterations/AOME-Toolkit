@@ -4,10 +4,8 @@ from app.db.session import SessionLocal
 from app.db.models.models import Settings, TranscodeJob, TranscodeProfile, TransferJob
 import shutil
 import hashlib
-from app.core.transcoder import Transcoder
+from app.core.transcoder import transcoder_instance as transcoder
 from datetime import datetime
-
-transcoder = Transcoder()
 
 async def process_queue():
     while True:
@@ -33,6 +31,8 @@ async def process_queue():
                     
                     if profile:
                         profile_dict = {
+                            "preset": profile.name,
+                            "media_type": profile.media_type,
                             "container": profile.container,
                             "video_encoder": profile.video_encoder,
                             "video_quality": profile.video_quality,
@@ -65,7 +65,7 @@ async def process_queue():
         await asyncio.sleep(2)
 
 async def run_transcode_job(job_id: int, input_path: str, output_path: str, profile_dict: dict, log_path: str):
-    result = await transcoder.transcode(input_path, output_path, profile_dict, log_path=log_path)
+    result = await transcoder.transcode(job_id, input_path, output_path, profile_dict, log_path=log_path)
     
     db = SessionLocal()
     try:
@@ -81,7 +81,7 @@ async def run_transcode_job(job_id: int, input_path: str, output_path: str, prof
                 # However, transcoder.transcode is async and returns when the process *starts*.
                 # We need to wait for it to actually finish. Let's poll transcoder status.
                 while True:
-                    status = transcoder.get_status(input_path)
+                    status = transcoder.get_status(job_id)
                     if status["status"] in ["completed", "failed", "cancelled"]:
                         job.status = status["status"]
                         job.completed_at = datetime.now()
@@ -103,15 +103,34 @@ async def run_transcode_job(job_id: int, input_path: str, output_path: str, prof
                         # Auto delete logic
                         if status["status"] == "completed":
                             try:
+                                # Attach custom cover art if present and it's an MKV file
+                                if job.output_path and job.output_path.lower().endswith(".mkv"):
+                                    poster_path = os.path.join(os.path.dirname(job.input_path), "poster.jpg")
+                                    if os.path.exists(poster_path):
+                                        import subprocess
+                                        try:
+                                            subprocess.run([
+                                                "mkvpropedit",
+                                                job.output_path,
+                                                "--attachment-name", "cover.jpg",
+                                                "--attachment-mime-type", "image/jpeg",
+                                                "--add-attachment", poster_path
+                                            ], check=True, capture_output=True)
+                                        except Exception as e:
+                                            print(f"Failed to attach poster to MKV {job.output_path}: {e}")
+
                                 settings = db.query(Settings).first()
                                 
                                 # Generate HTML comparison report if enabled (Wait for entire group to finish)
-                                if settings and getattr(settings, 'generate_comparison_html', False):
-                                    unfinished_group_peers = db.query(TranscodeJob).filter(
-                                        TranscodeJob.group_name == job.group_name,
-                                        TranscodeJob.id != job.id,
-                                        TranscodeJob.status != "completed"
-                                    ).count()
+                                profile = db.query(TranscodeProfile).filter(TranscodeProfile.id == job.profile_id).first()
+                                
+                                unfinished_group_peers = db.query(TranscodeJob).filter(
+                                    TranscodeJob.group_name == job.group_name,
+                                    TranscodeJob.id != job.id,
+                                    TranscodeJob.status != "completed"
+                                ).count()
+
+                                if settings and getattr(settings, 'generate_comparison_html', False) and (not profile or profile.media_type != "audio"):
                                     if unfinished_group_peers == 0:
                                         print(f"Generating master comparison report for {job.group_name}...")
                                         from app.core.reports import generate_comparison_report
@@ -123,15 +142,31 @@ async def run_transcode_job(job_id: int, input_path: str, output_path: str, prof
                                         if job not in all_group_jobs:
                                             all_group_jobs.append(job)
                                             
-                                        # Filter out Extras
-                                        file_pairs = []
+                                        # Filter out Extras and group by output directory (for multi-profile)
+                                        profile_groups = {}
                                         for gj in all_group_jobs:
                                             if "/Extras/" not in gj.output_path and "\\Extras\\" not in gj.output_path:
-                                                file_pairs.append((gj.input_path, gj.output_path))
+                                                out_dir = os.path.dirname(gj.output_path)
+                                                if out_dir not in profile_groups:
+                                                    profile_groups[out_dir] = []
+                                                profile_groups[out_dir].append((gj.input_path, gj.output_path))
                                                 
-                                        if file_pairs:
-                                            output_dir = os.path.dirname(file_pairs[0][1])
-                                            generate_comparison_report(file_pairs, output_dir, job.group_name, settings)
+                                        for out_dir, f_pairs in profile_groups.items():
+                                            if f_pairs:
+                                                generate_comparison_report(f_pairs, out_dir, job.group_name, settings)
+
+                                if settings and getattr(settings, 'auto_transfer_transcodes', False):
+                                    if unfinished_group_peers == 0:
+                                        from app.api.transcoding import queue_transfer_jobs_for_group
+                                        # Determine media type
+                                        type_str = "movie"
+                                        if profile and profile.media_type == "audio":
+                                            type_str = "music"
+                                        elif "/Season " in job.output_path or "\\Season " in job.output_path:
+                                            type_str = "tv"
+                                        
+                                        print(f"Auto-transferring group {job.group_name} as {type_str}...")
+                                        queue_transfer_jobs_for_group(job.group_name, type_str, db, settings)
 
                                 if settings and settings.auto_delete_rips:
                                     # Ensure no other jobs for this input file failed or are still running

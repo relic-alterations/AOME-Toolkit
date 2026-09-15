@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.db.models.models import MovieRip, Settings, TVShowProfile
 from app.core.ripper import Ripper
+from app.core.audio_ripper import audio_ripper_instance as audio_ripper
 import os
 import json
 
@@ -53,6 +54,9 @@ async def start_rip(
     start_episode: Optional[int] = None,
     end_episode: Optional[int] = None,
     disc_name: Optional[str] = None,
+    artist: Optional[str] = None,
+    mbid: Optional[str] = None,
+    poster: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
     settings = db.query(Settings).first()
@@ -67,7 +71,10 @@ async def start_rip(
         "mode": mode,
         "ripMode": ripMode,
         "title": title,
+        "artist": artist,
         "year": year,
+        "mbid": mbid,
+        "poster": poster,
         "episode_map": json.loads(episode_map) if episode_map else {},
         "season": season,
         "start_episode": start_episode,
@@ -109,14 +116,22 @@ async def start_rip(
     log_path = os.path.join(log_dir, f"rip_{int(time.time())}_{device_path.replace('/', '_')}.log")
 
     # Start the rip
-    result = await ripper.rip_disc(
-        device_path, 
-        output_dir, 
-        title_index=title_ids, 
-        subtitle_mode=subtitle_mode,
-        metadata=metadata,
-        log_path=log_path
-    )
+    if mode in ["album", "mixtape"]:
+        result = await audio_ripper.rip_disc(
+            device_path,
+            output_dir,
+            metadata=metadata,
+            log_path=log_path
+        )
+    else:
+        result = await ripper.rip_disc(
+            device_path, 
+            output_dir, 
+            title_index=title_ids, 
+            subtitle_mode=subtitle_mode,
+            metadata=metadata,
+            log_path=log_path
+        )
     
     if result["status"] == "started":
         # Always create a MovieRip record as a generic 'rip job' for history
@@ -136,16 +151,35 @@ async def start_rip(
 
 @router.get("/status/{device_path:path}")
 def get_rip_status(device_path: str):
-    return ripper.get_status(device_path)
+    res = ripper.get_status(device_path)
+    if not res or res.get("status") == "idle":
+        audio_res = audio_ripper.get_status(device_path)
+        if audio_res and audio_res.get("status") != "idle":
+            res = audio_res
+    return res
 
 @router.get("/active")
 def get_all_active_rips():
-    return ripper.active_rips
+    res = ripper.active_rips.copy()
+    res.update(audio_ripper.active_rips)
+    return res
 
 @router.post("/cancel-all")
 async def cancel_all_rips(db: Session = Depends(get_db)):
     for device_path in list(ripper.active_rips.keys()):
         await ripper.cancel_rip(device_path)
+        
+        # Mark as cancelled in DB if possible
+        job = db.query(MovieRip).filter(
+            MovieRip.status == "ripping", 
+            MovieRip.raw_path.contains(device_path.replace('/dev/', ''))
+        ).first()
+        if job:
+            job.status = "cancelled"
+            db.commit()
+            
+    for device_path in list(audio_ripper.active_rips.keys()):
+        await audio_ripper.cancel_rip(device_path)
         
         # Mark as cancelled in DB if possible
         job = db.query(MovieRip).filter(

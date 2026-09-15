@@ -7,3 +7,4 @@ alembic
 psutil
 requests
 beautifulsoup4
+websockets

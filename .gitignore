@@ -26,3 +26,13 @@ logs/
 # AI Tracking Files
 AGENT_SYNC.txt
 PLAN.md
+
+# Testing & Scratch Scripts
+test*.py
+backend/test*.py
+simulate_rip.py
+fix_indent.py
+get_ip.py
+all_sources.txt
+file_list.txt
+*.db
