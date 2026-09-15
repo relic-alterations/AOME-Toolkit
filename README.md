@@ -34,104 +34,56 @@ Full disclosure, I am hardly a software developer/programmer. 99% of this codeba
 
 ---
 
-## Installation & Setup (Linux)
+## 🚀 Quick Start Guide
 
-The easiest and most reliable way to run AOME on Linux is via Docker, as it bypasses all system-level dependencies for MakeMKV and Handbrake. 
+The easiest and most reliable way to run AOME on both **Linux** and **Windows** is using our pre-compiled Docker container. This skips all the messy system dependencies (MakeMKV, HandBrake, Python) and gets you ripping in minutes.
 
-### Docker Compose Configuration
-For your reference, here is the default `docker-compose.yml` used to run the suite. Notice how it maps the hardware optical drive (`/dev/sr0`) directly into the container.
+### Step 1: Install Prerequisites
+- **Git**: Download and install [Git](https://git-scm.com/downloads) so you can download the project.
+- **Docker**: Download and install [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Windows) or the Docker Engine (Linux).
 
-```yaml
-version: '3.8'
+> ⚠️ **Windows Hardware Note:** Docker on Windows runs inside a virtual machine and cannot natively "see" internal SATA CD/DVD drives plugged into your motherboard. To use AOME on Windows, you **must** use an external USB optical drive and pass it through to Docker (using the open-source `usbipd-win` tool).
 
-services:
-  aome:
-    image: ghcr.io/relic-alterations/aome-toolkit:main
-    ports:
-      - "8000:8000"
-    volumes:
-      # Map your local ~/AOME folder to the container's extraction folder
-      - ${HOME}/AOME:/root/AOME
-      
-      # Persist the database so MakeMKV keys and settings survive restarts
-      - ./backend/aome.db:/app/backend/aome.db
-      
-      # UNCOMMENT and map your network NAS drives here to enable Auto-Transfers:
-      # - /mnt/nas/Media:/mnt/nas/Media
-      
-    devices:
-      # Pass the optical drive through to the container
-      - "/dev/sr0:/dev/sr0"
-      # - "/dev/sr1:/dev/sr1" # Uncomment for multiple drives
-    privileged: true # Required for full SCSI command access to optical drives
-    restart: unless-stopped
+### Step 2: Download AOME
+Open your terminal (or PowerShell/Command Prompt) and download the repository:
+```bash
+git clone https://github.com/relic-alterations/AOME-Toolkit.git
+cd AOME-Toolkit
 ```
 
-### Linux Docker (Recommended)
+### Step 3: Configure Your Drives (Optional)
+By default, AOME looks for a single optical drive at `/dev/sr0`. If you have multiple drives or it's mounted elsewhere, open the `docker-compose.yml` file in any text editor and update the `devices:` section to include your extra drives (e.g., `/dev/sr1`).
+
+### Step 4: Start the Engine
+We automatically build and publish the AOME container via GitHub Actions, so you don't have to wait for it to compile locally! Run:
+```bash
+docker compose up -d
+```
+*Note: This will download the latest pre-compiled image from GitHub Packages and start it in the background.*
+
+### Step 5: Access the Dashboard
+Open your web browser and navigate to:
+**http://localhost:8000**
+
+---
+
+### 🐧 Linux Native (Bare Metal Alternative)
+
+If you are on Linux and prefer not to use Docker, we've included an automated install script that safely configures everything for you:
+
 1. **Download the code:**
    ```bash
    git clone https://github.com/relic-alterations/AOME-Toolkit.git
    cd AOME-Toolkit
    ```
-2. **Start the application:** 
+2. **Run the Installer:** 
    ```bash
-   docker compose up -d
+   ./install.sh
    ```
-3. **Access the Web UI:** `http://localhost:8000`
-
-> **Note on Hardware:** The `docker-compose.yml` file is pre-configured to pass `/dev/sr0` into the container. If your optical drive is located elsewhere (e.g., `/dev/sr1`), or you have multiple drives, update the `devices:` section in the `docker-compose.yml`.
-
-### Linux Native (Bare Metal)
-If you prefer not to use Docker, or are on a locked-down file system:
-1. Run `./install.sh` to setup your Python and Node environments securely.
-2. Run `./aome.sh start` to launch the suite.
-3. **Access the Web UI:** `http://localhost:5173`
-
----
-
-## Installation & Setup (Windows)
-
-### Windows Docker
-You can run AOME on Windows via Docker Desktop, but **please read the hardware warning below carefully.**
-1. **Download the code:**
-   ```powershell
-   git clone https://github.com/relic-alterations/AOME-Toolkit.git
-   cd AOME-Toolkit
+   *(This safely installs Python, Node, MakeMKV, HandBrake, FFmpeg, cdparanoia, and builds your isolated virtual environments).*
+3. **Launch the Suite:**
+   ```bash
+   ./aome.sh start
    ```
-2. **Start the application:** 
-   ```powershell
-   docker compose up -d
-   ```
-3. **Access the Web UI:** `http://localhost:8000`
-
-> **CRITICAL WARNING FOR WINDOWS DOCKER:** MakeMKV requires direct, low-level SCSI access to physical optical drives. Because Windows Docker runs inside a virtual machine (Hyper-V / WSL2), it cannot natively "see" SATA optical drives plugged into your motherboard. 
-> 
-> *Workaround:* If you use an **external USB Optical Drive**, you can successfully pass it into the Docker container by using the open-source `usbipd-win` tool. Otherwise, you must run AOME natively (Bare Metal).
-
----
-
-### Windows Native (Bare Metal)
-
-If you have an internal SATA optical drive, you must run AOME natively on your host machine.
-
-**Prerequisites:** You must have [Python 3.10+](https://www.python.org/downloads/) and [Node.js](https://nodejs.org/) installed. You must also install [MakeMKV](https://www.makemkv.com/download/), [HandBrakeCLI](https://handbrake.fr/downloads2.php), and [FFmpeg](https://ffmpeg.org/download.html) natively on your Windows system and ensure they are added to your system PATH. *(Note: Audio CD extraction currently relies on `cdparanoia` which is heavily Linux-centric. If you need Audio CD support on Windows, it is highly recommended to run AOME via Docker).*
-
-1. **Download the code:** Open PowerShell or Command Prompt.
-   ```powershell
-   git clone https://github.com/relic-alterations/AOME-Toolkit.git
-   cd AOME-Toolkit
-   ```
-
-2. **Start the Application:** I've included a simple batch script to automate booting the servers. Double click it, or run:
-   ```powershell
-   .\aome.bat start
-   ```
-   *(This will automatically install any missing Python/Node dependencies and launch two background windows for the frontend and backend).*
-
-3. **Stop the Application:**
-   ```powershell
-   .\aome.bat stop
-   ```
-
-4. **Launch it:** Access the Web UI at `http://localhost:5173`
+4. **Access the Dashboard:** Go to `http://localhost:5173` in your browser.
 
