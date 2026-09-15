@@ -52,12 +52,12 @@ services:
     ports:
       # The container serves both the Frontend UI and Backend API on port 8000
       - "8000:8000"
+    environment:
+      # Tell AOME to store the database directly inside your extracted media folder
+      - AOME_DATABASE_URL=sqlite:////root/AOME/aome.db
     volumes:
       # Maps your local ~/AOME folder to where the container extracts and transcodes media
       - ${HOME}/AOME:/root/AOME
-      
-      # Persists the database so MakeMKV keys and UI settings survive container restarts
-      - ./backend/aome.db:/app/backend/aome.db
       
       # UNCOMMENT to map your NAS/Network drives for the Auto-Transfer feature:
       # - /mnt/nas/Media:/mnt/nas/Media
