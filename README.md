@@ -34,12 +34,14 @@ Full disclosure, I am hardly a software developer/programmer. 99% of this codeba
 
 ---
 
-## 🚀 Quick Start Guide
+## 🚀 Quick Start Guide (Docker)
 
-The easiest and most reliable way to run AOME on both **Linux** and **Windows** is using our pre-compiled Docker container. This skips all the messy system dependencies (MakeMKV, HandBrake, Python) and gets you ripping in minutes.
+The easiest and most reliable way to run AOME on both **Linux** and **Windows** is using our pre-compiled Docker container. 
 
-### For Docker Veterans
-If you already have a Docker environment running, you don't even need to clone the entire repository. Just spin up this `docker-compose.yml` file:
+*Note: In the Docker container, the React frontend is pre-built and served directly by the FastAPI backend, which is why everything is seamlessly accessed through a single port (`8000`).*
+
+### Example Compose File
+You can run AOME by saving the following `docker-compose.yml` file and running `docker compose up -d`:
 
 ```yaml
 version: '3.8'
@@ -48,22 +50,25 @@ services:
   aome:
     image: ghcr.io/relic-alterations/aome-toolkit:main
     ports:
+      # The container serves both the Frontend UI and Backend API on port 8000
       - "8000:8000"
     volumes:
-      # Map your local ~/AOME folder to the container's extraction folder
+      # Maps your local ~/AOME folder to where the container extracts and transcodes media
       - ${HOME}/AOME:/root/AOME
       
-      # Persist the database so MakeMKV keys and settings survive restarts
+      # Persists the database so MakeMKV keys and UI settings survive container restarts
       - ./backend/aome.db:/app/backend/aome.db
       
-      # UNCOMMENT and map your network NAS drives here to enable Auto-Transfers:
+      # UNCOMMENT to map your NAS/Network drives for the Auto-Transfer feature:
       # - /mnt/nas/Media:/mnt/nas/Media
       
     devices:
-      # Pass the optical drive through to the container
+      # Passes the physical optical drive through to the container
       - "/dev/sr0:/dev/sr0"
       # - "/dev/sr1:/dev/sr1" # Uncomment for multiple drives
-    privileged: true # Required for full SCSI command access to optical drives
+      
+    # Required for full SCSI command access to hardware optical drives
+    privileged: true 
     restart: unless-stopped
 ```
 
@@ -71,31 +76,32 @@ services:
 
 ### Step-by-Step Installation
 
+If you've never used Docker before, follow these simple steps to get started:
+
 #### Step 1: Install Prerequisites
 - **Git**: Download and install [Git](https://git-scm.com/downloads) so you can download the project.
 - **Docker**: Download and install [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Windows) or the Docker Engine (Linux).
 
 > ⚠️ **Windows Hardware Note:** Docker on Windows runs inside a virtual machine and cannot natively "see" internal SATA CD/DVD drives plugged into your motherboard. To use AOME on Windows, you **must** use an external USB optical drive and pass it through to Docker (using the open-source `usbipd-win` tool).
 
-### Step 2: Download AOME
+#### Step 2: Download AOME
 Open your terminal (or PowerShell/Command Prompt) and download the repository:
 ```bash
 git clone https://github.com/relic-alterations/AOME-Toolkit.git
 cd AOME-Toolkit
 ```
 
-### Step 3: Configure Your Drives (Optional)
+#### Step 3: Configure Your Drives (Optional)
 By default, AOME looks for a single optical drive at `/dev/sr0`. If you have multiple drives or it's mounted elsewhere, open the `docker-compose.yml` file in any text editor and update the `devices:` section to include your extra drives (e.g., `/dev/sr1`).
 
-### Step 4: Start the Engine
+#### Step 4: Start the Engine
 We automatically build and publish the AOME container via GitHub Actions, so you don't have to wait for it to compile locally! Run:
 ```bash
 docker compose up -d
 ```
-*Note: This will download the latest pre-compiled image from GitHub Packages and start it in the background.*
 
-### Step 5: Access the Dashboard
-Open your web browser and navigate to:
+#### Step 5: Access the Dashboard
+Once the container finishes starting, open your web browser and navigate to:
 **http://localhost:8000**
 
 ---
@@ -113,10 +119,10 @@ If you are on Linux and prefer not to use Docker, we've included an automated in
    ```bash
    ./install.sh
    ```
-   *(This safely installs Python, Node, MakeMKV, HandBrake, FFmpeg, cdparanoia, and builds your isolated virtual environments).*
+   *(Installs Python, Node, MakeMKV, HandBrake, FFmpeg, cdparanoia, and configures environments).*
 3. **Launch the Suite:**
    ```bash
    ./aome.sh start
    ```
-4. **Access the Dashboard:** Go to `http://localhost:5173` in your browser.
+4. **Access the Dashboard:** Go to `http://localhost:5173` in your browser. *(Note: Bare metal runs the frontend and backend on separate ports).*
 
