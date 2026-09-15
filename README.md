@@ -38,7 +38,40 @@ Full disclosure, I am hardly a software developer/programmer. 99% of this codeba
 
 The easiest and most reliable way to run AOME on both **Linux** and **Windows** is using our pre-compiled Docker container. This skips all the messy system dependencies (MakeMKV, HandBrake, Python) and gets you ripping in minutes.
 
-### Step 1: Install Prerequisites
+### For Docker Veterans
+If you already have a Docker environment running, you don't even need to clone the entire repository. Just spin up this `docker-compose.yml` file:
+
+```yaml
+version: '3.8'
+
+services:
+  aome:
+    image: ghcr.io/relic-alterations/aome-toolkit:main
+    ports:
+      - "8000:8000"
+    volumes:
+      # Map your local ~/AOME folder to the container's extraction folder
+      - ${HOME}/AOME:/root/AOME
+      
+      # Persist the database so MakeMKV keys and settings survive restarts
+      - ./backend/aome.db:/app/backend/aome.db
+      
+      # UNCOMMENT and map your network NAS drives here to enable Auto-Transfers:
+      # - /mnt/nas/Media:/mnt/nas/Media
+      
+    devices:
+      # Pass the optical drive through to the container
+      - "/dev/sr0:/dev/sr0"
+      # - "/dev/sr1:/dev/sr1" # Uncomment for multiple drives
+    privileged: true # Required for full SCSI command access to optical drives
+    restart: unless-stopped
+```
+
+---
+
+### Step-by-Step Installation
+
+#### Step 1: Install Prerequisites
 - **Git**: Download and install [Git](https://git-scm.com/downloads) so you can download the project.
 - **Docker**: Download and install [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Windows) or the Docker Engine (Linux).
 
