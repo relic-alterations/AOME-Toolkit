@@ -117,29 +117,36 @@ class DriveManager:
                             artist = None
                             year = None
                             all_matches = []
-                            
                             if not disc_name:
                                 audio_toc = await self._check_audio_cd(dev_path)
                                 if audio_toc:
                                     is_audio = True
-                                    # Try to identify via MusicBrainz TOC
-                                    try:
-                                        import asyncio
-                                        from app.core.musicbrainz import identify_cd
-                                        loop = asyncio.get_event_loop()
-                                        toc_str = audio_toc["toc"] if isinstance(audio_toc, dict) else (audio_toc if isinstance(audio_toc, str) else None)
-                                        cd_text = audio_toc if isinstance(audio_toc, dict) else None
-                                        info = await loop.run_in_executor(None, identify_cd, dev_path, toc_str, cd_text)
-                                        if info:
-                                            disc_name = info["title"]
-                                            artist = info["artist"]
-                                            year = info["year"]
-                                            all_matches = info.get("all_matches", [])
-                                        else:
+                                    if isinstance(audio_toc, dict) and audio_toc.get("toc") == "scanning":
+                                        disc_name = audio_toc["title"]
+                                        artist = audio_toc["artist"]
+                                        year = None
+                                        all_matches = []
+                                    else:
+                                        # Try to identify via MusicBrainz TOC
+                                        try:
+                                            import asyncio
+                                            from app.core.musicbrainz import identify_cd
+                                            loop = asyncio.get_event_loop()
+                                            toc_str = audio_toc["toc"] if isinstance(audio_toc, dict) else (audio_toc if isinstance(audio_toc, str) else None)
+                                            cd_text = audio_toc if isinstance(audio_toc, dict) else None
+                                            info = await loop.run_in_executor(None, identify_cd, dev_path, toc_str, cd_text)
+                                            if info:
+                                                disc_name = info["title"]
+                                                artist = info["artist"]
+                                                year = info["year"]
+                                                all_matches = info.get("all_matches", [])
+                                            else:
+                                                disc_name = "Audio CD"
+                                        except:
                                             disc_name = "Audio CD"
-                                    except:
-                                        disc_name = "Audio CD"
-                            if disc_name != "Audio CD":
+                            
+                            # Always cache if we successfully identified a disc (even if it's a generic Audio CD)
+                            if disc_name and disc_name != "Scanning Audio CD...":
                                 self.drive_cache[cache_key] = {
                                     "disc_name": disc_name,
                                     "is_audio": is_audio,
@@ -297,7 +304,7 @@ class DriveManager:
             )
             stdout, _ = await check_proc.communicate()
             if stdout.strip():
-                return False
+                return {"toc": "scanning", "title": "Scanning Audio CD...", "artist": "Please wait..."}
 
             process = await asyncio.create_subprocess_exec(
                 "cd-info", "--no-device-info", "--no-cddb", "-C", dev_path,
