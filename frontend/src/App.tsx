@@ -2791,6 +2791,7 @@ function App() {
                     ) : (
                       <>
                         <option value="av_aac">AAC</option>
+                        <option value="copy">Auto Passthru (All Formats)</option>
                         <option value="copy:ac3">AC3 Passthru</option>
                         <option value="copy:truehd">TrueHD Passthru</option>
                         <option value="copy:dts">DTS Passthru</option>
@@ -2804,7 +2805,8 @@ function App() {
                   <>
                       <div>
                         <label className='block text-[10px] text-gray-500 uppercase font-bold mb-1' title="Folds surround sound tracks down into fewer channels. Stereo is recommended for AAC/Opus compression.">Audio Mixdown</label>
-                        <select value={profileEditor.audio_mixdown || 'stereo'} onChange={e => setProfileEditor({...profileEditor, audio_mixdown: e.target.value})} className='w-full bg-gray-900 border border-gray-700 rounded-lg p-2 text-xs focus:border-green-500 outline-none'>
+                        <select value={profileEditor.audio_mixdown || ''} onChange={e => setProfileEditor({...profileEditor, audio_mixdown: e.target.value})} className='w-full bg-gray-900 border border-gray-700 rounded-lg p-2 text-xs focus:border-green-500 outline-none'>
+                          <option value="">Source / Auto</option>
                           <option value="mono">Mono</option>
                           <option value="stereo">Stereo</option>
                           <option value="5point1">5.1 Surround</option>
@@ -2815,6 +2817,7 @@ function App() {
                         <div>
                           <label className='block text-[10px] text-gray-500 uppercase font-bold mb-1' title="Target audio bitrate. 192kbps is ideal for Stereo AAC, 320kbps for MP3.">Bitrate (kbps)</label>
                           <select value={profileEditor.audio_bitrate} onChange={e => setProfileEditor({...profileEditor, audio_bitrate: parseInt(e.target.value)})} className='w-full bg-gray-900 border border-gray-700 rounded-lg p-2 text-xs focus:border-green-500 outline-none'>
+                            <option value="0">Source / Auto</option>
                             <option value="96">96 kbps</option>
                             <option value="128">128 kbps</option>
                             <option value="160">160 kbps</option>

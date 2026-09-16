@@ -107,10 +107,10 @@ class Transcoder:
             if "audio_encoder" in profile_data:
                 cmd.extend(["-E", profile_data["audio_encoder"]])
             
-            if "audio_bitrate" in profile_data:
+            if "audio_bitrate" in profile_data and str(profile_data["audio_bitrate"]) != "0":
                 cmd.extend(["-B", str(profile_data["audio_bitrate"])])
                 
-            if profile_data.get("audio_mixdown"):
+            if profile_data.get("audio_mixdown") and str(profile_data["audio_mixdown"]).strip():
                 cmd.extend(["--mixdown", profile_data["audio_mixdown"]])
                 
             if profile_data.get("encoder_preset"):
