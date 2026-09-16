@@ -192,7 +192,7 @@ const HelpGuide = () => {
             <div>
               <h3 className="text-xl font-bold text-pink-400 mb-2">TMDB (The Movie Database)</h3>
               <p>Used to fetch high-resolution posters, cast lists, and release years for Movies and TV Shows.</p>
-              <p><strong>Where to get a key:</strong> Go to <a href="https://www.themoviedb.org/" target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">themoviedb.org</a>, create a free account, go to your Account Settings -> API, and request an API key (v3 auth).</p>
+              <p><strong>Where to get a key:</strong> Go to <a href="https://www.themoviedb.org/" target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">themoviedb.org</a>, create a free account, go to your Account Settings -&gt; API, and request an API key (v3 auth).</p>
             </div>
             
             <div>
