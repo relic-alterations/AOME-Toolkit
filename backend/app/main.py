@@ -110,12 +110,16 @@ async def get_drives():
                 audio_ripper_instance.active_rips.pop(path, None)
                 d["rip_status"] = {"status": "idle"}
             else:
-                d["rip_status"] = status
+                clean_status = dict(status)
+                clean_status.pop("process", None)
+                d["rip_status"] = clean_status
             active_paths.remove(path)
             
     # Inject locked drives MakeMKV excluded
     for path in active_paths:
         rip = combined_active_rips.get(path, {})
+        clean_rip = dict(rip)
+        clean_rip.pop("process", None)
         drives.append({
             "index": 999,
             "visible": True,
@@ -125,7 +129,7 @@ async def get_drives():
             "disc_name": rip.get("metadata", {}).get("title", "Active Rip") if "metadata" in rip else rip.get("title", "Active Audio Rip"),
             "device_path": path,
             "has_disc": True,
-            "rip_status": rip
+            "rip_status": clean_rip
         })
         
     result["drives"] = sorted(drives, key=lambda x: x["device_path"])
