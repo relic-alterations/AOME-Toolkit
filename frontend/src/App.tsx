@@ -3783,15 +3783,6 @@ function App() {
               <span className='font-bold text-sm'>{tab.label}</span>
             </button>
           ))}
-          
-          <button
-             className='ml-auto px-6 py-3 rounded-xl flex items-center space-x-2 text-gray-400 hover:text-white hover:bg-gray-800 transition-all duration-300'
-             onClick={() => window.open('/help', '_blank')}
-             title="Open Documentation & Help Guide"
-          >
-             <span className='text-lg'>❓</span>
-             <span className='font-bold text-sm'>Help / Guide</span>
-          </button>
         </nav>
       </header>
 
@@ -3844,6 +3835,14 @@ function App() {
           </>
         )}
       </main>
+
+      <button
+         className='fixed bottom-8 right-8 w-14 h-14 bg-gray-900 hover:bg-gray-800 border-2 border-gray-700 hover:border-gray-500 rounded-full flex items-center justify-center text-2xl shadow-2xl transition-all hover:scale-110 z-50'
+         onClick={() => window.open('/help', '_blank')}
+         title="Open Documentation & Help Guide"
+      >
+         ❓
+      </button>
 
       <footer className='w-full max-w-6xl border-t border-gray-900 py-10 flex justify-between items-center opacity-40 hover:opacity-100 transition-opacity duration-500'>
         <div className='flex items-center space-x-2'>
