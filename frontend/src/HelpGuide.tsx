@@ -15,7 +15,8 @@ const HelpGuide = () => {
     { id: 'metadata', title: '8. Metadata & APIs' },
     { id: 'hardware', title: '9. Hardware Acceleration' },
     { id: 'concurrency', title: '10. Concurrent Jobs & Logs' },
-    { id: 'troubleshooting', title: '11. Troubleshooting' },
+    { id: 'dependencies', title: '11. Core Dependencies' },
+    { id: 'troubleshooting', title: '12. Troubleshooting' },
   ];
 
   return (
@@ -69,6 +70,11 @@ const HelpGuide = () => {
             <p><strong>Main Feature:</strong> Automatically grabs the longest video track. Perfect for Movies.</p>
             <p><strong>All Titles:</strong> Extracts every video file over a certain length. Mandatory for TV Show discs.</p>
             <p><strong>Custom Selection:</strong> Lets you manually select titles to avoid ripping behind-the-scenes featurettes.</p>
+            
+            <div className="mt-4 p-4 bg-orange-900/20 border border-orange-500/30 rounded-xl">
+              <h4 className="font-bold text-orange-400 mb-2">Note: Stuck at 0% Progress</h4>
+              <p className="text-sm">When ripping a large disc, you may notice the progress bar sitting at 0% for an extended period of time. <strong>This is normal.</strong> Due to how MakeMKV buffers data and processes titles, the progress bar often won't move until the <em>entire</em> main feature has finished extracting.</p>
+            </div>
           </div>
         </section>
 
@@ -183,8 +189,23 @@ const HelpGuide = () => {
         <section id="metadata" className="mb-20">
           <h2 className="text-3xl font-black mb-6 text-white border-b border-gray-800 pb-4">8. Metadata & APIs</h2>
           <div className="space-y-6 text-gray-400 leading-relaxed">
-            <p><strong>TMDB & OMDB Integration:</strong> Provide API keys in Settings to instantly fetch high-res movie posters, cast lists, and release years. AOME embeds this data into the final MKV file so Plex instantly recognizes it.</p>
-            <p><strong>MusicBrainz:</strong> For Audio CDs, AOME reads the physical Table of Contents (TOC) layout on the disc, hashes it, and queries MusicBrainz to instantly identify the album and all 15 track names without you typing a thing.</p>
+            <div>
+              <h3 className="text-xl font-bold text-pink-400 mb-2">TMDB (The Movie Database)</h3>
+              <p>Used to fetch high-resolution posters, cast lists, and release years for Movies and TV Shows.</p>
+              <p><strong>Where to get a key:</strong> Go to <a href="https://www.themoviedb.org/" target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">themoviedb.org</a>, create a free account, go to your Account Settings -> API, and request an API key (v3 auth).</p>
+            </div>
+            
+            <div>
+              <h3 className="text-xl font-bold text-pink-400 mb-2">OMDB (The Open Movie Database)</h3>
+              <p>Used as a fallback for incredibly obscure titles or specific IMDB IDs.</p>
+              <p><strong>Where to get a key:</strong> Go to <a href="https://www.omdbapi.com/apikey.aspx" target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">omdbapi.com/apikey.aspx</a> and sign up for a free key (1,000 requests per day limit).</p>
+            </div>
+            
+            <div>
+              <h3 className="text-xl font-bold text-pink-400 mb-2">MusicBrainz</h3>
+              <p>For Audio CDs, AOME reads the physical Table of Contents (TOC) layout on the disc, hashes it, and queries MusicBrainz to instantly identify the album and all track names.</p>
+              <p><strong>Where to get a key:</strong> You don't need one! MusicBrainz provides open access. However, AOME allows you to supply an optional MusicBrainz token if you hit rate limits.</p>
+            </div>
           </div>
         </section>
 
@@ -204,16 +225,51 @@ const HelpGuide = () => {
           </div>
         </section>
 
+        <section id="dependencies" className="mb-20">
+          <h2 className="text-3xl font-black mb-6 text-white border-b border-gray-800 pb-4">11. Core Dependencies</h2>
+          <div className="space-y-6 text-gray-400 leading-relaxed">
+            <p>AOME Toolkit is built on the shoulders of several powerful open-source utilities. Here is exactly what is running under the hood:</p>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
+              <div className="bg-gray-900 border border-gray-800 p-6 rounded-xl">
+                <h4 className="font-bold text-white text-lg mb-1">MakeMKV</h4>
+                <p className="text-sm text-gray-400">The core extraction engine for video discs. It performs real-time decryption of AACS and BD+ copy protection, ripping the raw video/audio tracks losslessly into a massive Matroska (MKV) file.</p>
+              </div>
+              
+              <div className="bg-gray-900 border border-gray-800 p-6 rounded-xl">
+                <h4 className="font-bold text-white text-lg mb-1">HandBrake (HandBrakeCLI)</h4>
+                <p className="text-sm text-gray-400">The video compression engine. It takes the massive raw MKV file produced by MakeMKV and transcodes it down to a tiny, efficient MP4/MKV using advanced codecs like H.265 or AV1.</p>
+              </div>
+              
+              <div className="bg-gray-900 border border-gray-800 p-6 rounded-xl">
+                <h4 className="font-bold text-white text-lg mb-1">cdparanoia</h4>
+                <p className="text-sm text-gray-400">The core extraction engine for Audio CDs. Unlike standard CD rippers, cdparanoia reads every single byte multiple times, verifying jitter and sector drops to ensure 100% flawless, corruption-free audio extraction.</p>
+              </div>
+              
+              <div className="bg-gray-900 border border-gray-800 p-6 rounded-xl">
+                <h4 className="font-bold text-white text-lg mb-1">FFmpeg</h4>
+                <p className="text-sm text-gray-400">The audio compression engine. It takes the raw, uncompressed WAV data from cdparanoia and instantly compresses it into Lossless FLAC or Lossy MP3 files, while injecting the MusicBrainz ID3 tags.</p>
+              </div>
+              
+              <div className="bg-gray-900 border border-gray-800 p-6 rounded-xl">
+                <h4 className="font-bold text-white text-lg mb-1">FastAPI & Python</h4>
+                <p className="text-sm text-gray-400">The backend orchestrator. AOME's entire brain is a high-performance asynchronous Python API that manages the SQLite database, job queues, hardware polling, and file transfers.</p>
+              </div>
+              
+              <div className="bg-gray-900 border border-gray-800 p-6 rounded-xl">
+                <h4 className="font-bold text-white text-lg mb-1">React & TailwindCSS</h4>
+                <p className="text-sm text-gray-400">The frontend user interface. A fully responsive Single Page Application (SPA) that communicates with the FastAPI backend to give you a real-time, interactive dashboard.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <section id="troubleshooting" className="mb-20">
-          <h2 className="text-3xl font-black mb-6 text-white border-b border-gray-800 pb-4">11. Troubleshooting</h2>
+          <h2 className="text-3xl font-black mb-6 text-white border-b border-gray-800 pb-4">12. Troubleshooting</h2>
           <div className="space-y-6 text-gray-400 leading-relaxed">
             <div className="p-4 bg-red-900/10 border border-red-500/20 rounded-xl">
               <h4 className="font-bold text-red-400 mb-1">MakeMKV Beta Key Expiry</h4>
               <p>MakeMKV is free while in Beta, but the key expires roughly every 60 days. If Blu-Rays stop ripping, go to Settings and click "Fetch Latest Beta Key". AOME will scrape the MakeMKV forums and install the new key automatically.</p>
-            </div>
-            <div className="p-4 bg-gray-900 rounded-xl border border-gray-800">
-              <h4 className="font-bold text-white mb-1">DVD Ripping is completely stuck</h4>
-              <p>Optical drives are incredibly sensitive to scratches and oils. If extraction freezes at 30%, eject the disc and clean it with a microfiber cloth from the center out.</p>
             </div>
             <div className="p-4 bg-gray-900 rounded-xl border border-gray-800">
               <h4 className="font-bold text-white mb-1">Video is "Window-Boxed" (Black Bars on all 4 sides)</h4>
