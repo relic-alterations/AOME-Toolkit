@@ -38,16 +38,35 @@ case "$DISTRO" in
             echo "WARNING: No AUR helper (yay or paru) found. You must install 'makemkv' manually."
         fi
         ;;
-    ubuntu|debian|pop)
-        echo "[1/6] Installing dependencies via apt..."
+    ubuntu|debian|pop|linuxmint)
+        echo "[1/6] Installing standard dependencies via apt..."
         sudo apt update
+        sudo apt install -y software-properties-common
         sudo apt install -y \
             python3 python3-pip python3-venv \
-            makemkv-bin makemkv-oss \
             handbrake-cli ffmpeg cdparanoia libcdio-utils \
             git curl build-essential \
             lsscsi util-linux nodejs npm \
             default-jre-headless
+            
+        echo "[1.5/6] Attempting to install MakeMKV via PPA..."
+        # Add MakeMKV PPA for Ubuntu/Mint/Pop
+        sudo add-apt-repository -y ppa:heyarje/makemkv-beta || echo "Notice: PPA addition failed (common on pure Debian)."
+        sudo apt update
+        
+        # We temporarily disable set -e so the script doesn't instantly die if makemkv isn't found
+        set +e
+        sudo apt install -y makemkv-bin makemkv-oss
+        if [ $? -ne 0 ]; then
+            echo "=========================================================================="
+            echo "WARNING: Could not install MakeMKV from the repository."
+            echo "If you are on pure Debian, you must compile MakeMKV manually from source:"
+            echo "https://forum.makemkv.com/forum/viewtopic.php?f=3&t=224"
+            echo "AOME will not be able to rip video discs until MakeMKV is installed."
+            echo "=========================================================================="
+            sleep 3
+        fi
+        set -e
         ;;
     *)
         echo "Unsupported distribution: $DISTRO"
