@@ -34,95 +34,60 @@ Full disclosure, I am hardly a software developer/programmer. 99% of this codeba
 
 ---
 
-## 🚀 Quick Start Guide (Docker)
+## 🚀 Installation Guide (Bare Metal)
 
-The easiest and most reliable way to run AOME on both **Linux** and **Windows** is using our pre-compiled Docker container. 
+AOME is designed to run natively on Linux (Arch, Ubuntu, Debian, Pop!_OS) using our automated orchestration script. The installer will automatically download all required system dependencies, build isolated environments, and configure your optical drive permissions without altering your core system.
 
-*Note: In the Docker container, the React frontend is pre-built and served directly by the FastAPI backend, which is why everything is seamlessly accessed through a single port (`8000`).*
+### Step 1: Download the Toolkit
 
-### Example Compose File
-You can run AOME by saving the following `docker-compose.yml` file and running `docker compose up -d`:
+You can download AOME using either Git or a direct ZIP file if you don't have Git installed.
 
-```yaml
-version: '3.8'
-
-services:
-  aome:
-    image: ghcr.io/relic-alterations/aome-toolkit:main
-    ports:
-      # The container serves both the Frontend UI and Backend API on port 8000
-      - "8000:8000"
-    environment:
-      # Tell AOME to store the database directly inside your extracted media folder
-      - AOME_DATABASE_URL=sqlite:////root/AOME/aome.db
-    volumes:
-      # Maps your local ~/AOME folder to where the container extracts and transcodes media
-      - ${HOME}/AOME:/root/AOME
-      
-      # UNCOMMENT to map your NAS/Network drives for the Auto-Transfer feature:
-      # - /mnt/nas/Media:/mnt/nas/Media
-      
-    devices:
-      # Passes the physical optical drive through to the container
-      - "/dev/sr0:/dev/sr0"
-      # - "/dev/sr1:/dev/sr1" # Uncomment for multiple drives
-      
-    # Required for full SCSI command access to hardware optical drives
-    privileged: true 
-    restart: unless-stopped
-```
-
----
-
-### Step-by-Step Installation
-
-If you've never used Docker before, follow these simple steps to get started:
-
-#### Step 1: Install Prerequisites
-- **Git**: Download and install [Git](https://git-scm.com/downloads) so you can download the project.
-- **Docker**: Download and install [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Windows) or the Docker Engine (Linux).
-
-> ⚠️ **Windows Hardware Note:** Docker on Windows runs inside a virtual machine and cannot natively "see" internal SATA CD/DVD drives plugged into your motherboard. To use AOME on Windows, you **must** use an external USB optical drive and pass it through to Docker (using the open-source `usbipd-win` tool).
-
-#### Step 2: Download AOME
-Open your terminal (or PowerShell/Command Prompt) and download the repository:
-```bash
-git clone https://github.com/relic-alterations/AOME-Toolkit.git
-cd AOME-Toolkit
-```
-
-#### Step 3: Configure Your Drives (Optional)
-By default, AOME looks for a single optical drive at `/dev/sr0`. If you have multiple drives or it's mounted elsewhere, open the `docker-compose.yml` file in any text editor and update the `devices:` section to include your extra drives (e.g., `/dev/sr1`).
-
-#### Step 4: Start the Engine
-We automatically build and publish the AOME container via GitHub Actions, so you don't have to wait for it to compile locally! Run:
-```bash
-docker compose up -d
-```
-
-#### Step 5: Access the Dashboard
-Once the container finishes starting, open your web browser and navigate to:
-**http://localhost:8000**
-
----
-
-### 🐧 Linux Native (Bare Metal Alternative)
-
-If you are on Linux and prefer not to use Docker, we've included an automated install script that safely configures everything for you:
-
-1. **Download the code:**
+**Option A: Using Git (Recommended)**
+1. Open your terminal.
+2. Run the following commands to clone the repository:
    ```bash
    git clone https://github.com/relic-alterations/AOME-Toolkit.git
    cd AOME-Toolkit
    ```
-2. **Run the Installer:** 
+
+**Option B: Downloading the ZIP (No Git Required)**
+1. Click the green **"<> Code"** button at the top of this GitHub repository page.
+2. Select **"Download ZIP"**.
+3. Open your file manager, extract the downloaded `AOME-Toolkit-main.zip` file, and rename the folder to `AOME-Toolkit`.
+4. Open your terminal, navigate to where you extracted it (e.g., your Downloads folder), and move into it:
    ```bash
+   cd ~/Downloads/AOME-Toolkit
+   ```
+
+### Step 2: Run the Automated Installer
+
+We have included a highly robust script that builds AOME. Because AOME interacts closely with your physical hardware (CD/DVD drives), the script will ask for your `sudo` password to install system packages and grant you the correct group permissions.
+
+1. Ensure the installer is executable, then run it:
+   ```bash
+   chmod +x install.sh
    ./install.sh
    ```
-   *(Installs Python, Node, MakeMKV, HandBrake, FFmpeg, cdparanoia, and configures environments).*
-3. **Launch the Suite:**
+2. **What this does in the background:**
+   - **System Packages:** Installs Python 3, Node.js, `npm`, `ffmpeg`, `handbrake-cli`, MakeMKV, `cdparanoia`, and `libcdio` using your system's package manager (`apt` or `pacman`).
+   - **Isolated Environments:** Creates an isolated Python virtual environment (`~/.aome_venv`) and Node.js dependency folder (`~/.aome_frontend_deps`) in your home directory. *Note: This guarantees the software remains completely portable, even if you are running the project code off an exFAT USB flash drive!*
+   - **Permissions:** Adds your user account to the `optical` or `cdrom` group so AOME can interface with your disc drives.
+
+3. **Important:** Because your user was added to a new hardware group, you may need to apply the group changes. The script will tell you at the end, but you can typically do this by running `newgrp optical` (Arch) or `newgrp cdrom` (Debian/Ubuntu), or simply **rebooting your computer**.
+
+### Step 3: Launch the Suite
+
+AOME comes with a built-in management script (`aome.sh`) that orchestrates both the backend API and the frontend user interface.
+
+1. Start AOME in the background:
    ```bash
    ./aome.sh start
    ```
-4. **Access the Dashboard:** Go to `http://localhost:5173` in your browser. *(Note: Bare metal runs the frontend and backend on separate ports).*
+   *(To stop it later, you can run `./aome.sh stop` or `./aome.sh restart`).*
 
+### Step 4: Access the Dashboard
+
+Once AOME says it is fully operational, open any web browser on your machine and navigate to:
+**http://localhost:5173**
+
+You're all set! You can now configure your settings, insert a disc, and start ripping.
