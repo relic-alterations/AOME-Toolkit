@@ -31,7 +31,6 @@ async def process_queue():
                     
                     if profile:
                         profile_dict = {
-                            "preset": profile.name,
                             "media_type": profile.media_type,
                             "container": profile.container,
                             "video_encoder": profile.video_encoder,

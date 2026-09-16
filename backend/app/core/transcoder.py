@@ -89,9 +89,6 @@ class Transcoder:
             ]
 
             # Apply Profile Settings
-            if "preset" in profile_data:
-                cmd.extend(["--preset", profile_data["preset"]])
-            
             if "container" in profile_data:
                 cmd.extend(["--format", profile_data["container"]])
                 
