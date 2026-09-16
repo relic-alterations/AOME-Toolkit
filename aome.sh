@@ -18,6 +18,13 @@ FRONTEND_PID_FILE="/tmp/aome_frontend.pid"
 start_aome() {
     echo "--- Starting AOME Suite ---"
 
+    if [ ! -d "$VENV_PATH" ] || [ ! -d "$HOME/.aome_frontend_deps" ]; then
+        echo "ERROR: Dependencies not found!"
+        echo "It looks like you moved AOME to a new machine or haven't installed it yet."
+        echo "Please run './install.sh' first to set up the environments."
+        exit 1
+    fi
+
     # 1. Start Backend
     if [ -f "$BACKEND_PID_FILE" ] && ps -p $(cat "$BACKEND_PID_FILE") > /dev/null; then
         echo "Backend is already running."

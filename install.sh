@@ -27,7 +27,7 @@ case "$DISTRO" in
             handbrake-cli \
             git curl base-devel \
             lsscsi util-linux nodejs npm \
-            jre-openjdk-headless ffmpeg cdparanoia
+            jre-openjdk-headless ffmpeg cdparanoia libcdio
             
         echo "[1.5/6] Checking for AUR helper to install MakeMKV..."
         if command -v paru &> /dev/null; then
@@ -44,7 +44,7 @@ case "$DISTRO" in
         sudo apt install -y \
             python3 python3-pip python3-venv \
             makemkv-bin makemkv-oss \
-            handbrake-cli ffmpeg cdparanoia \
+            handbrake-cli ffmpeg cdparanoia libcdio-utils \
             git curl build-essential \
             lsscsi util-linux nodejs npm \
             default-jre-headless
@@ -91,9 +91,9 @@ if [ -f "frontend/package.json" ]; then
         (cd "$FRONTEND_DEPS_DIR" && npm install --silent)
     fi
     
-    # Copy Vite environment files if they exist
-    if [ -f "frontend/.env" ]; then
-        cp frontend/.env "$FRONTEND_DEPS_DIR/"
+    # Copy all Vite environment files if they exist
+    if ls frontend/.env* 1> /dev/null 2>&1; then
+        cp frontend/.env* "$FRONTEND_DEPS_DIR/"
     fi
     
     echo "Copying dereferenced node_modules back to flash drive to bypass exFAT symlink limitations..."

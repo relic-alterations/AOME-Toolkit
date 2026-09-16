@@ -69,7 +69,7 @@ def identify_cd(device_path="/dev/sr0", cached_toc=None, cd_text=None):
         
     headers = {'User-Agent': f'AOME/1.0 ( {email} )'}
     try:
-        resp = requests.get(url, headers=headers, timeout=10)
+        resp = requests.get(url, headers=headers, timeout=30)
         data = resp.json()
         if "releases" in data and len(data["releases"]) > 0:
             releases = data["releases"]
