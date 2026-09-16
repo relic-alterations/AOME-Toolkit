@@ -40,15 +40,22 @@ case "$DISTRO" in
         ;;
     ubuntu|debian|pop|linuxmint)
         echo "[1/6] Installing standard dependencies via apt..."
-        sudo apt update
+        sudo apt update || true
+        
+        # Temporarily disable set -e for potentially missing packages
+        set +e
         sudo apt install -y software-properties-common
+        
         sudo apt install -y \
             python3 python3-pip python3-venv \
             handbrake-cli ffmpeg cdparanoia libcdio-utils \
             git curl build-essential \
             lsscsi util-linux nodejs npm \
             default-jre-headless
-            
+        
+        # Re-enable error catching
+        set -e
+        
         echo "[1.5/6] Attempting to install MakeMKV via PPA..."
         # Add MakeMKV PPA for Ubuntu/Mint/Pop
         sudo add-apt-repository -y ppa:heyarje/makemkv-beta || echo "Notice: PPA addition failed (common on pure Debian)."
