@@ -90,6 +90,33 @@ status_aome() {
     fi
 }
 
+update_aome() {
+    echo "--- Updating AOME Toolkit ---"
+    
+    stop_aome
+    sleep 1
+    
+    echo "Pulling latest code from GitHub..."
+    cd "$SCRIPT_DIR"
+    if ! git pull origin main; then
+        echo "ERROR: Failed to pull latest code."
+        echo "If you downloaded AOME as a ZIP without Git, you must manually download the new ZIP and extract it."
+        echo "Otherwise, you may have local code changes conflicting with the update."
+        exit 1
+    fi
+    
+    echo "Re-running installer to update environments..."
+    if [ -f "./install.sh" ]; then
+        chmod +x ./install.sh
+        ./install.sh
+    else
+        echo "ERROR: install.sh not found!"
+        exit 1
+    fi
+    
+    echo "Update complete! You can now run './aome.sh start' to boot the updated system."
+}
+
 case "$1" in
     start)
         start_aome
@@ -105,8 +132,11 @@ case "$1" in
     status)
         status_aome
         ;;
+    update)
+        update_aome
+        ;;
     *)
-        echo "Usage: ./aome.sh {start|stop|restart|status}"
+        echo "Usage: ./aome.sh {start|stop|restart|status|update}"
         exit 1
         ;;
 esac
