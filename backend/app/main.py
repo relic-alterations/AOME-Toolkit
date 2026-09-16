@@ -136,6 +136,17 @@ async def get_drives():
     return result
 
 import shutil
+import socket
+def get_local_ip():
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "127.0.0.1"
+
 @app.get("/health")
 def get_system_health():
     from app.db.session import SessionLocal
@@ -187,6 +198,7 @@ def get_system_health():
     mem_used_percent = ((mem_total - mem_avail) / mem_total * 100) if mem_total > 0 else 0
 
     return {
+        "local_ip": get_local_ip(),
         "cpu_load": round(cpu_load_percent, 1),
         "cpu_temp": round(temp_c, 1),
         "ram_used": round(mem_used_percent, 1),

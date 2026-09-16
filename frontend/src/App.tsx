@@ -1064,7 +1064,11 @@ function App() {
       )}
 
       {health && (
-        <div className='mb-8 grid grid-cols-2 lg:grid-cols-4 gap-6'>
+        <div className='mb-8 grid grid-cols-2 lg:grid-cols-5 gap-6'>
+          <div className='p-4 bg-gray-800/40 rounded-3xl border border-gray-700 flex items-center justify-between'>
+             <div><p className='text-xs text-gray-500 uppercase tracking-widest font-bold mb-1'>Local IP</p><p className='text-xl font-black text-cyan-400'>{health.local_ip || '127.0.0.1'}</p></div>
+             <span className='text-3xl opacity-50'>🌐</span>
+          </div>
           <div className='p-4 bg-gray-800/40 rounded-3xl border border-gray-700 flex items-center justify-between'>
              <div><p className='text-xs text-gray-500 uppercase tracking-widest font-bold mb-1'>CPU Load</p><p className='text-xl font-black text-blue-400'>{health.cpu_load}%</p></div>
              <span className='text-3xl opacity-50'>💻</span>
