@@ -3772,7 +3772,7 @@ function App() {
           ].map(tab => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => setActiveTab(tab.id as any)}
               className={`px-6 py-3 rounded-xl flex items-center space-x-2 transition-all duration-300 ${
                 activeTab === tab.id 
                   ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/30' 
@@ -3783,6 +3783,15 @@ function App() {
               <span className='font-bold text-sm'>{tab.label}</span>
             </button>
           ))}
+          
+          <button
+             className='ml-auto px-6 py-3 rounded-xl flex items-center space-x-2 text-gray-400 hover:text-white hover:bg-gray-800 transition-all duration-300'
+             onClick={() => window.open('/help', '_blank')}
+             title="Open Documentation & Help Guide"
+          >
+             <span className='text-lg'>❓</span>
+             <span className='font-bold text-sm'>Help / Guide</span>
+          </button>
         </nav>
       </header>
 
