@@ -2,8 +2,6 @@ version: '3.8'
 
 services:
   aome:
-    # To build and test locally instantly without pushing to GitHub, comment out 'image' and uncomment 'build: .'
-    # build: .
     image: ghcr.io/relic-alterations/aome-toolkit:main
     ports:
       - "8000:8000"
@@ -19,11 +17,8 @@ services:
       # - /mnt/nas/Media:/mnt/nas/Media
       
     devices:
-      # Pass the optical drive through to the container. 
-      # MakeMKV requires BOTH the sr* block device and the sg* SCSI generic devices!
+      # Pass the optical drive through to the container
       - "/dev/sr0:/dev/sr0"
-      - "/dev/sg0:/dev/sg0"
-      - "/dev/sg1:/dev/sg1"
-      - "/dev/sg2:/dev/sg2"
+      # - "/dev/sr1:/dev/sr1" # Uncomment for multiple drives
     privileged: true # Often required for full SCSI command access to optical drives
     restart: unless-stopped
