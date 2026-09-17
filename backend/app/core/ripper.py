@@ -569,7 +569,16 @@ class Ripper:
             self.active_rips[device_path]["process"] = process
             
             while True:
-                line = await asyncio.wait_for(process.stdout.readline(), timeout=2.0)
+                try:
+                    line = await asyncio.wait_for(process.stdout.readline(), timeout=2.0)
+                except asyncio.TimeoutError:
+                    if process.returncode is not None:
+                        break
+                    continue
+                except Exception as loop_e:
+                    print(f"Error reading handbrake line: {loop_e}")
+                    break
+                    
                 if not line:
                     break
                 decoded = line.decode(errors="replace").strip()
