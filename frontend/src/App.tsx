@@ -3484,8 +3484,6 @@ function App() {
                   <span className='block text-sm font-bold text-red-400 group-hover:text-red-300 transition-colors'>Auto-Delete Rips</span>
                 </div>
               </label>
-            </div>
-            
 
               <label className='flex items-center space-x-3 cursor-pointer group mt-4' title='If MakeMKV fails due to a scratch, automatically try ripping the Main Feature directly with HandBrake (Bites through scratches, Movies Only).'>
                 <input 
@@ -3498,6 +3496,7 @@ function App() {
                   <span className='block text-sm font-bold text-orange-400 group-hover:text-orange-300 transition-colors'>HandBrake Fallback (Movies)</span>
                 </div>
               </label>
+            </div>
             <div className='space-y-4'>
               <h4 className='text-xs text-purple-400 uppercase font-bold mb-2 border-b border-gray-700 pb-2'>Transcoding</h4>
               <div>
