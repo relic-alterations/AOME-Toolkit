@@ -1,8 +1,5 @@
 node_modules
-.venv
-venv
-.git
-__pycache__
-*.pyc
-*.pyo
-.env
+frontend/node_modules
+frontend/dist
+backend/__pycache__
+backend/aome.db
