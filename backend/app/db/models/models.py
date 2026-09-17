@@ -35,6 +35,7 @@ class Settings(Base):
     export_stats_file = Column(Boolean, default=True)
     multi_profile_transcode = Column(Boolean, default=False)
     skip_transcoding_and_finalize = Column(Boolean, default=False)
+    fallback_handbrake_rip = Column(Boolean, default=False)
 
 class TVShowProfile(Base):
     __tablename__ = "tv_show_profiles"

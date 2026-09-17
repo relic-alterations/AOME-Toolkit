@@ -37,6 +37,7 @@ class SettingsSchema(BaseModel):
     comparison_image_count: Optional[int] = None
     include_video_comparison: Optional[bool] = None
     skip_transcoding_and_finalize: Optional[bool] = None
+    fallback_handbrake_rip: Optional[bool] = None
 
     class Config:
         from_attributes = True
@@ -106,7 +107,8 @@ def get_settings(db: Session = Depends(get_db)):
             auto_transfer_transcodes=False,
             export_stats_file=True,
             multi_profile_transcode=False,
-            skip_transcoding_and_finalize=False
+            skip_transcoding_and_finalize=False,
+            fallback_handbrake_rip=False
         )
         db.add(settings)
         db.commit()

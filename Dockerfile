@@ -30,7 +30,9 @@ RUN apt-get update && apt-get install -y \
 RUN add-apt-repository ppa:heyarje/makemkv-beta \
     && apt-get update \
     && apt-get install -y makemkv-bin makemkv-oss \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/lib/libmmbd.so.0 /usr/lib/libaacs.so.0 \
+    && ln -sf /usr/lib/libmmbd.so.0 /usr/lib/libbdplus.so.0
 
 WORKDIR /app
 

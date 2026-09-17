@@ -9,7 +9,7 @@ class Ripper:
 
     def __init__(self, makemkvcon_path="makemkvcon"):
         self.makemkvcon_path = makemkvcon_path
-        self.active_rips = {} # index -> process mapping
+                self.active_rips = {} # index -> process mapping
 
     async def _get_makemkv_env(self):
         """
@@ -19,8 +19,8 @@ class Ripper:
         from app.db.session import SessionLocal
         from app.db.models.models import Settings
         
-        env = os.environ.copy()
-        db = SessionLocal()
+            env = os.environ.copy()
+        from app.db.session import SessionLocal\n        from app.db.models.models import Settings, TranscodeProfile\n        db = SessionLocal()
         try:
             settings = db.query(Settings).first()
             if settings and settings.makemkv_key:
@@ -28,7 +28,7 @@ class Ripper:
                 env["MAKEMKVCON_KEY"] = key
                 
                 # Ensure ~/.MakeMKV/settings.conf is updated
-                try:
+                    try:
                     conf_dir = os.path.expanduser("~/.MakeMKV")
                     os.makedirs(conf_dir, exist_ok=True)
                     conf_path = os.path.join(conf_dir, "settings.conf")
@@ -71,7 +71,7 @@ class Ripper:
             import shutil
             for filename in os.listdir(output_dir):
                 filepath = os.path.join(output_dir, filename)
-                try:
+                    try:
                     if os.path.isfile(filepath) or os.path.islink(filepath):
                         os.unlink(filepath)
                     elif os.path.isdir(filepath):
@@ -105,7 +105,7 @@ class Ripper:
                 env=env
             )
             
-            self.active_rips[device_path] = {
+                self.active_rips[device_path] = {
                 "process": process,
                 "output_dir": output_dir,
                 "status": "initializing",
@@ -130,9 +130,10 @@ class Ripper:
         Also polls the output directory to infer title completion when MakeMKV is silent.
         """
         f = open(log_path, "a") if log_path else None
+        failed_with_scsi = False
         try:
             while True:
-                try:
+                    try:
                     line = await asyncio.wait_for(process.stdout.readline(), timeout=2.0)
                     if not line:
                         break
@@ -172,6 +173,9 @@ class Ripper:
                             except ValueError:
                                 pass
                                 
+                    elif decoded_line.startswith("MSG:2003") or "Failed to save title" in decoded_line:
+                        self.active_rips[device_path]["scsi_error"] = True
+                        failed_with_scsi = True
                     elif decoded_line.startswith("MSG:5014"):
                         # MSG:5014 indicates MakeMKV has finished scanning and is now saving titles
                         if self.active_rips[device_path]["status"] == "initializing":
@@ -185,7 +189,7 @@ class Ripper:
                         
                 except asyncio.TimeoutError:
                     # MakeMKV is busy ripping silently (PRGV is suppressed).
-                    pass
+                        pass
                 
                 # Periodically update titles_completed and pseudo-progress by checking the output directory
                 rip_info = self.active_rips.get(device_path)
@@ -207,25 +211,49 @@ class Ripper:
                             rip_info["progress"] = min(100, round(base_pct, 1))
                             
             return_code = await process.wait()
-            if return_code == 0 and self.active_rips[device_path].get("status") != "failed":
+            
+            # Did we get a SCSI error during the rip?
+            scsi_failed = self.active_rips[device_path].get("scsi_error", False)
+            
+            if (return_code == 0 and not scsi_failed) and self.active_rips[device_path].get("status") != "failed":
                 if self.active_rips[device_path].get("titles_total", 0) > 0:
-                    self.active_rips[device_path]["titles_completed"] = self.active_rips[device_path]["titles_total"]
-                    self.active_rips[device_path]["progress"] = 100
+                        self.active_rips[device_path]["titles_completed"] = self.active_rips[device_path]["titles_total"]
+                        self.active_rips[device_path]["progress"] = 100
                     
                 needs_split = await self._post_process_rip(device_path, metadata)
                 if needs_split:
-                    self.active_rips[device_path]["status"] = "needs_split"
+                        self.active_rips[device_path]["status"] = "needs_split"
                 else:
-                    self.active_rips[device_path]["status"] = "completed"
+                        self.active_rips[device_path]["status"] = "completed"
             else:
-                self.active_rips[device_path]["status"] = "failed"
+                fallback_success = False
+                
+                try:
+                    from app.db.session import SessionLocal
+                    from app.db.models.models import Settings
+                    db = SessionLocal()
+                    settings = db.query(Settings).first()
+                    fallback_enabled = settings.fallback_handbrake_rip if settings else False
+                    db.close()
+                    
+                    if fallback_enabled and metadata.get("mode") == "movie":
+                        fallback_success = await self._handbrake_fallback_rip(device_path, output_dir, metadata, log_path)
+                except Exception as e:
+                    print(f"Fallback check error: {e}")
+                
+                if fallback_success:
+                    self.active_rips[device_path]["status"] = "completed"
+                    # Process any MakeMKV extras that survived
+                    await self._post_process_rip(device_path, metadata)
+                else:
+                    self.active_rips[device_path]["status"] = "failed"
                 
             # Update DB, trigger auto-transcode, and auto-eject disc
             try:
                 from app.db.session import SessionLocal
                 from app.db.models.models import Settings, MovieRip, TranscodeProfile
-                db = SessionLocal()
-                try:
+                from app.db.session import SessionLocal\n        from app.db.models.models import Settings, TranscodeProfile\n        db = SessionLocal()
+                    try:
                     # Sync final status to the log history in database
                     if log_path:
                         db_rip = db.query(MovieRip).filter(MovieRip.log_path == log_path).first()
@@ -287,7 +315,7 @@ class Ripper:
                 print(f"Error in ripper post-db logic: {e}")
                 pass
         finally:
-            if f:
+                if f:
                 f.close()
             
     async def _post_process_rip(self, device_path, metadata):
@@ -451,10 +479,10 @@ class Ripper:
             
             # Clean up the temp directory if we used one
             if target_dir != output_dir:
-                try:
+                    try:
                     os.rmdir(output_dir)
                 except Exception:
-                    pass
+                        pass
                         
                 return needs_split
         except Exception as e:
@@ -472,7 +500,7 @@ class Ripper:
             
             log_path = data.get("log_path")
             if log_path and os.path.exists(log_path):
-                try:
+                    try:
                     with open(log_path, 'rb') as f:
                         try:
                             f.seek(-1024, os.SEEK_END)
@@ -482,7 +510,7 @@ class Ripper:
                         if lines:
                             data["last_log_line"] = lines[-1].decode(errors='replace').strip()
                 except Exception:
-                    pass
+                        pass
                     
             return data
         return {"status": "idle"}
@@ -500,4 +528,79 @@ class Ripper:
                 return True
             except Exception:
                 return False
-        return False
+            return False
+import os
+import asyncio
+from app.db.session import SessionLocal
+from app.db.models.models import Settings, TranscodeProfile
+
+
+    async def _handbrake_fallback_rip(self, device_path, output_dir, metadata, log_path):
+        self.active_rips[device_path]["status"] = "handbrake_fallback"
+        self.active_rips[device_path]["last_log_line"] = "Handbrake fallback initiated..."
+        
+        from app.db.session import SessionLocal\n        from app.db.models.models import Settings, TranscodeProfile\n        db = SessionLocal()
+        settings = db.query(Settings).first()
+        preset_name = settings.handbrake_preset if settings else "Fast 1080p30"
+        profile = db.query(TranscodeProfile).filter(TranscodeProfile.name == preset_name).first()
+        db.close()
+        
+        mode = metadata.get("mode", "movie")
+        title = metadata.get("title", "Unknown")
+        year = metadata.get("year", "")
+        target_dir = metadata.get("target_dir", output_dir)
+        os.makedirs(target_dir, exist_ok=True)
+        
+        movie_name = f"{title} ({year})" if year else title
+        final_mkv = os.path.join(target_dir, f"{movie_name}.mkv")
+        
+        cmd = [
+            "HandBrakeCLI",
+            "-i", device_path,
+            "-o", final_mkv,
+            "--main-feature",
+            "-e", "x264", "-q", "18", "--audio", "1", "--aencoder", "copy", "--subtitle", "scan", "-f", "mkv"
+        ]
+        
+        f = open(log_path, "a") if log_path else None
+        if f:
+            f.write("\n--- MAKE MKV FAILED, TRIGGERING HANDBRAKE FALLBACK ---\n")
+            f.flush()
+            
+        try:
+            env = os.environ.copy()
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+                env=env
+            )
+            self.active_rips[device_path]["process"] = process
+            
+            while True:
+                line = await asyncio.wait_for(process.stdout.readline(), timeout=2.0)
+                if not line:
+                    break
+                decoded = line.decode(errors="replace").strip()
+                if f:
+                    f.write(decoded + "\n")
+                    f.flush()
+                    
+                self.active_rips[device_path]["last_log_line"] = decoded
+                
+                if "Encoding: task" in decoded and "%" in decoded:
+                    try:
+                        pct_str = decoded.split(",")[-1].replace("%", "").strip()
+                        self.active_rips[device_path]["progress"] = float(pct_str)
+                    except:
+                        pass
+                        
+            return_code = await process.wait()
+            return return_code == 0
+        except Exception as e:
+            if f:
+                f.write(f"Handbrake fallback error: {str(e)}\n")
+            return False
+        finally:
+            if f:
+                f.close()

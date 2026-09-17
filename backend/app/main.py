@@ -35,6 +35,13 @@ try:
 except Exception:
     pass
 
+
+try:
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE settings ADD COLUMN fallback_handbrake_rip BOOLEAN DEFAULT 0"))
+except Exception:
+    pass
+
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="AOME API")

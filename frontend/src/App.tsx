@@ -73,6 +73,7 @@ interface Settings {
   auto_eject?: boolean;
   skip_confirmations?: boolean;
   auto_delete_rips?: boolean;
+  fallback_handbrake_rip?: boolean;
   skip_transcoding_and_finalize?: boolean;
 }
 
