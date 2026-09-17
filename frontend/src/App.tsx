@@ -3486,6 +3486,18 @@ function App() {
               </label>
             </div>
             
+
+              <label className='flex items-center space-x-3 cursor-pointer group mt-4' title='If MakeMKV fails due to a scratch, automatically try ripping the Main Feature directly with HandBrake (Bites through scratches, Movies Only).'>
+                <input 
+                  type='checkbox' 
+                  checked={settings.fallback_handbrake_rip ?? false}
+                  onChange={(e) => setSettings({...settings, fallback_handbrake_rip: e.target.checked})}
+                  className='w-5 h-5 accent-orange-500 rounded bg-gray-900 border-gray-700 cursor-pointer'
+                />
+                <div>
+                  <span className='block text-sm font-bold text-orange-400 group-hover:text-orange-300 transition-colors'>HandBrake Fallback (Movies)</span>
+                </div>
+              </label>
             <div className='space-y-4'>
               <h4 className='text-xs text-purple-400 uppercase font-bold mb-2 border-b border-gray-700 pb-2'>Transcoding</h4>
               <div>
