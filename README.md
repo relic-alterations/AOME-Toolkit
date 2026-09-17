@@ -34,7 +34,59 @@ Full disclosure, I am hardly a software developer/programmer. 99% of this codeba
 
 ---
 
-## 🚀 Installation Guide (Bare Metal)
+## 🐳 Installation Guide (Docker / Recommend)
+
+Running AOME via Docker is the easiest and most robust method. It isolates all dependencies (MakeMKV, HandBrake, FFmpeg, Node, Python) into a clean container and avoids polluting your host OS.
+
+### 1. Create your `docker-compose.yml`
+
+Create a new folder anywhere on your machine, and inside it, create a file named `docker-compose.yml` with the following contents:
+
+```yaml
+version: '3.8'
+
+services:
+  aome:
+    # build: . # Uncomment to build locally instead of pulling
+    image: ghcr.io/relic-alterations/aome-toolkit:main
+    ports:
+      - "8000:8000"
+    volumes:
+      - ${HOME}/AOME:/root/AOME # Core media storage
+      - ./backend/aome.db:/app/backend/aome.db # Database persistence
+      # - /mnt/nas/Media:/mnt/nas/Media # Network drive passthrough
+      - /dev:/dev # Required for real-time optical drive detection
+      - /run/udev:/run/udev:ro # Required for real-time optical drive detection
+    privileged: true # Mandatory for MakeMKV SCSI command access
+    restart: unless-stopped
+    
+    # NVENC (Nvidia) Hardware Acceleration (Requires nvidia-container-toolkit on host)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    
+    # QSV (Intel) Hardware Acceleration is native and automatic via /dev:/dev
+```
+
+### 2. Launch the Container
+
+Run the following command in the same folder as your `docker-compose.yml` file:
+```bash
+docker compose up -d
+```
+
+### 3. Access the Dashboard
+
+Once the container boots, open your web browser and navigate to:
+**http://localhost:8000**
+
+---
+
+## 💻 Installation Guide (Bare Metal)
 
 AOME is designed to run natively on Linux (Arch, Ubuntu, Debian, Pop!_OS) using our automated orchestration script. The installer will automatically download all required system dependencies, build isolated environments, and configure your optical drive permissions without altering your core system.
 
