@@ -2,7 +2,8 @@ version: '3.8'
 
 services:
   aome:
-    image: ghcr.io/relic-alterations/aome-toolkit:main
+    build: .
+    # image: ghcr.io/relic-alterations/aome-toolkit:main
     ports:
       - "8000:8000"
     volumes:
@@ -20,3 +21,13 @@ services:
       
     privileged: true # Mandatory for full SCSI command access to optical drives
     restart: unless-stopped
+    
+    # UNCOMMENT the block below if you want to use NVENC hardware acceleration.
+    # Note: You MUST install `nvidia-container-toolkit` on your host machine first!
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
