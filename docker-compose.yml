@@ -14,11 +14,9 @@ services:
       
       # UNCOMMENT and configure this to pass your network drives/NAS into the container
       # so AOME can automatically transfer finished transcodes there:
-      # - /mnt/nas/Media:/mnt/nas/Media
+      # Map /dev and /run/udev so the container can detect when discs are inserted/ejected in real-time
+      - /dev:/dev
+      - /run/udev:/run/udev:ro
       
-    devices:
-      # Pass the optical drive through to the container
-      - "/dev/sr0:/dev/sr0"
-      # - "/dev/sr1:/dev/sr1" # Uncomment for multiple drives
-    privileged: true # Often required for full SCSI command access to optical drives
+    privileged: true # Mandatory for full SCSI command access to optical drives
     restart: unless-stopped
